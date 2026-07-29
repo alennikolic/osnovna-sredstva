@@ -21,45 +21,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['promeni_status_id']))
 }
 
 $klase = ucitajKlaseHijerarhijski($pdo);
-?>
-<!DOCTYPE html>
-<html lang="sr">
-<head>
-    <meta charset="UTF-8">
-    <title>Klase Osnovnih Sredstava</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; background: #f4f6f9; }
-        h1 { color: #333; }
-        .nav-bar { margin-bottom: 20px; }
-        .nav-bar a { margin-right: 15px; color: #007bff; text-decoration: none; font-weight: bold; }
-        .nav-bar a:hover { text-decoration: underline; }
-        .btn { display: inline-block; padding: 10px 15px; background: #28a745; color: #fff; text-decoration: none; border-radius: 4px; margin-bottom: 15px; border: none; cursor: pointer; font-size: 14px; }
-        table { width: 100%; border-collapse: collapse; background: #fff; }
-        th, td { padding: 10px; border: 1px solid #ddd; text-align: left; vertical-align: middle; }
-        th { background: #007bff; color: white; }
-        tr:nth-child(even) { background: #f9f9f9; }
-        .neaktivna-vrsta { opacity: 0.55; }
-        .oznaka { display: inline-block; padding: 3px 8px; border-radius: 10px; font-size: 12px; color: #fff; }
-        .oznaka-aktivna { background: #28a745; }
-        .oznaka-neaktivna { background: #6c757d; }
-        .akcije a, .akcije button { margin-right: 8px; font-size: 13px; }
-        .akcije button { background: none; border: none; color: #dc3545; cursor: pointer; padding: 0; text-decoration: underline; font-family: inherit; }
-        .akcije a { color: #007bff; text-decoration: none; }
-        .akcije a:hover, .akcije button:hover { text-decoration: underline; }
-        .poruka { padding: 10px; margin-bottom: 15px; border-radius: 4px; }
-        .poruka-success { background: #d4edda; color: #155724; }
-        .poruka-error { background: #f8d7da; color: #721c24; }
-    </style>
-</head>
-<body>
 
-    <div class="nav-bar">
-        <a href="index.php">Osnovna sredstva</a>
-        <a href="klase_index.php">Klase osnovnih sredstava</a>
-    </div>
+$naslovStranice = 'Klase Osnovnih Sredstava';
+require_once 'header.php';
+?>
 
     <h1>Klase osnovnih sredstava</h1>
-    <a href="klase_form.php" class="btn">+ Nova klasa</a>
+    <a href="klase_form.php" class="btn-add">+ Nova klasa</a>
 
     <?php if ($poruka): ?>
         <div class="poruka poruka-<?= $tipPoruke ?>"><?= htmlspecialchars($poruka) ?></div>
@@ -125,5 +93,4 @@ $klase = ucitajKlaseHijerarhijski($pdo);
         });
     </script>
 
-</body>
-</html>
+<?php require_once 'footer.php'; ?>
