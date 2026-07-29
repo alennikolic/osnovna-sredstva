@@ -18,5 +18,5 @@ Pre pokretanja potrebno je da na vašem Linux sistemu imate instalirane sledeće
 ### 1. Kloniranje repozitorijuma
 Otvorite terminal i preuzmite projekat:
 ```bash
-git clone [https://github.com/alennikolic/osnovna-sredstva.git](https://github.com/alennikolic/osnovna-sredstva.git)
-cd osnovna-sredstva
+docker compose up -d --build
+docker compose down -v
