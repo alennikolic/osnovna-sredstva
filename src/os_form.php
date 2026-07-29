@@ -44,24 +44,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // Učitavanje šifarnika iz baze za padajuće menije
 $klase = $pdo->query("SELECT id, naziv FROM klase_osnovnih_sredstava WHERE aktivna = 1")->fetchAll();
 $statusi = $pdo->query("SELECT id, naziv FROM statusi_sredstva ORDER BY redosled_prikaza")->fetchAll();
+
+$naslovStranice = 'Novo Osnovno Sredstvo';
+require_once 'header.php';
 ?>
-<!DOCTYPE html>
-<html lang="sr">
-<head>
-    <meta charset="UTF-8">
-    <title>Novo Osnovno Sredstvo</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; background: #f4f6f9; }
-        .form-container { background: #fff; padding: 20px; max-width: 500px; border-radius: 5px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
-        .form-group { margin-bottom: 15px; }
-        label { display: block; margin-bottom: 5px; font-weight: bold; }
-        input[type="text"], input[type="number"], input[type="date"], select { width: 100%; padding: 8px; box-sizing: border-box; }
-        .btn { padding: 10px 15px; background: #007bff; color: white; border: none; cursor: pointer; border-radius: 4px; }
-        .btn-cancel { background: #6c757d; text-decoration: none; padding: 10px 15px; color: white; border-radius: 4px; display: inline-block; }
-        .error { color: red; margin-bottom: 15px; }
-    </style>
-</head>
-<body>
 
 <div class="form-container">
     <h2>Unos novog osnovnog sredstva</h2>
@@ -120,5 +106,4 @@ $statusi = $pdo->query("SELECT id, naziv FROM statusi_sredstva ORDER BY redosled
     </form>
 </div>
 
-</body>
-</html>
+<?php require_once 'footer.php'; ?>
