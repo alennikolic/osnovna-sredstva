@@ -18,6 +18,7 @@ $trenutnaStranica = basename($_SERVER['SCRIPT_NAME']);
 $stavkeMenija = [
     ['naziv' => 'Osnovna sredstva', 'link' => 'index.php', 'sekcija' => ['index.php', 'os_form.php']],
     ['naziv' => 'Klase osnovnih sredstava', 'link' => 'klase_index.php', 'sekcija' => ['klase_index.php', 'klase_form.php']],
+    ['naziv' => 'Zaposleni', 'link' => 'zaposleni_index.php', 'sekcija' => ['zaposleni_index.php', 'zaposleni_form.php']],
 ];
 ?>
 <!DOCTYPE html>
