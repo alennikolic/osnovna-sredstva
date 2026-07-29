@@ -5,6 +5,7 @@
 --   1. Šifarnici i klasifikacije (amortizacione grupe, metode amortizacije, statusi,
 --      klase sredstava, lokacije, mesta troška, dobavljači, vrste transakcija,
 --      definicije dodatnih atributa)
+--   1B. Zaposleni, korisnici i prava pristupa (role i dozvole)
 --   2. Matična tabela osnovnih sredstava + fleksibilni atributi po klasi (EAV)
 --   3. Sredstva u pripremi (CIP - ulaganja pre aktivacije/kapitalizacije)
 --   4. Amortizacija (plan i stvarni periodični obračuni)
@@ -17,13 +18,13 @@
 --   9. Referentni (seed) podaci za šifarnike + primer hijerarhije klasa i atributa
 --  10. Pomoćni pregledni view
 --
--- NAPOMENA O OBIMU: Namerno NIJE uključena tabela korisnika i prava pristupa - to je
--- van zahtevanog scope-a. Polja poput "odgovorno_lice" i "izvrsilac" su obična
--- tekstualna polja jer se ne oslanjaju na tabelu korisnika iz nekog drugog modula.
---
 -- NAPOMENA O PORESKIM STOPAMA: Vrednosti u tabeli amortizacione_grupe su ostavljene
 -- prazne (NULL) jer se stope amortizacije po poreskim propisima menjaju kroz vreme -
 -- popuniti ih u skladu sa važećim propisom/internim pravilnikom kompanije.
+--
+-- NAPOMENA O LOZINKAMA: Tabela korisnici namerno NIJE seed-ovana (nema fiktivnih
+-- naloga u ovoj skripti) - kolona lozinka_hash mora sadržati pravi hash generisan
+-- kroz aplikaciju (npr. PHP password_hash()), nikad ručno unet SQL literal.
 --
 -- Motor: InnoDB | Charset: utf8mb4 (puna podrška za srpski jezik i dijakritike)
 -- Kompatibilno sa: MySQL 5.7+/8.0, MariaDB 10.3+
@@ -66,6 +67,11 @@ DROP TABLE IF EXISTS `klase_osnovnih_sredstava`;
 DROP TABLE IF EXISTS `statusi_sredstva`;
 DROP TABLE IF EXISTS `metode_amortizacije`;
 DROP TABLE IF EXISTS `amortizacione_grupe`;
+DROP TABLE IF EXISTS `role_dozvole`;
+DROP TABLE IF EXISTS `korisnici`;
+DROP TABLE IF EXISTS `dozvole`;
+DROP TABLE IF EXISTS `korisnicke_role`;
+DROP TABLE IF EXISTS `zaposleni`;
 
 
 -- =====================================================================================
@@ -237,6 +243,109 @@ CREATE TABLE `definicije_atributa` (
 
 
 -- =====================================================================================
+-- SEKCIJA 1B: ZAPOSLENI, KORISNICI I PRAVA PRISTUPA
+-- =====================================================================================
+-- Namerna podela na dva koncepta:
+--   - zaposleni  = poslovni/HR entitet (osoba kojoj se zadužuje sredstvo, član komisije...)
+--                  ne mora nužno imati pristup aplikaciji.
+--   - korisnici  = nalog za prijavu u aplikaciju (username + lozinka), opciono 1:1
+--                  povezan sa zaposlenim (spoljni administrator npr. ne mora biti
+--                  "zaposleni" u HR smislu).
+-- Prava pristupa su rešena kroz proste role (jedna rola po korisniku) sa listom
+-- dozvola po roli - dovoljno fleksibilno bez nepotrebne M:N kompleksnosti korisnik-rola.
+
+CREATE TABLE `zaposleni` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `sifra` VARCHAR(20) NULL COMMENT 'Interna šifra/broj zaposlenog (opciono)',
+  `ime` VARCHAR(100) NOT NULL,
+  `prezime` VARCHAR(100) NOT NULL,
+  `radno_mesto` VARCHAR(150) NULL,
+  `mesto_troska_id` INT UNSIGNED NULL COMMENT 'Organizaciona jedinica kojoj zaposleni pripada',
+  `lokacija_id` INT UNSIGNED NULL COMMENT 'Fizička lokacija rada zaposlenog',
+  `email` VARCHAR(150) NULL,
+  `telefon` VARCHAR(50) NULL,
+  `datum_zaposlenja` DATE NULL,
+  `datum_prestanka` DATE NULL COMMENT 'NULL = i dalje zaposlen',
+  `aktivan` TINYINT(1) NOT NULL DEFAULT 1,
+  `napomena` TEXT NULL,
+  `datum_kreiranja` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `datum_izmene` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_zaposleni_sifra` (`sifra`),
+  KEY `idx_zaposleni_mesto_troska` (`mesto_troska_id`),
+  KEY `idx_zaposleni_lokacija` (`lokacija_id`),
+  KEY `idx_zaposleni_prezime_ime` (`prezime`,`ime`),
+  CONSTRAINT `fk_zaposleni_mesto_troska` FOREIGN KEY (`mesto_troska_id`)
+      REFERENCES `mesta_troska` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_zaposleni_lokacija` FOREIGN KEY (`lokacija_id`)
+      REFERENCES `lokacije` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  COMMENT='Zaposleni - lica kojima se mogu zaduživati sredstva, biti članovi komisija i sl. (nezavisno od pristupa aplikaciji)';
+
+
+CREATE TABLE `korisnicke_role` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `sifra` VARCHAR(30) NOT NULL COMMENT 'npr. ADMIN, KNJIGOVODJA, MAGACIONER, PREGLED',
+  `naziv` VARCHAR(100) NOT NULL,
+  `opis` TEXT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_rola_sifra` (`sifra`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  COMMENT='Korisničke role - svaki korisnik ima tačno jednu rolu';
+
+
+CREATE TABLE `dozvole` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `sifra` VARCHAR(50) NOT NULL COMMENT 'npr. SREDSTVA_UNOS, SREDSTVA_IZMENA, KLASE_UPRAVLJANJE',
+  `naziv` VARCHAR(150) NOT NULL,
+  `modul` VARCHAR(50) NULL COMMENT 'Grupisanje dozvola po modulu - za prikaz u UI za dodelu prava',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_dozvola_sifra` (`sifra`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  COMMENT='Pojedinačne dozvole (akcije) u sistemu';
+
+
+CREATE TABLE `role_dozvole` (
+  `rola_id` INT UNSIGNED NOT NULL,
+  `dozvola_id` INT UNSIGNED NOT NULL,
+  PRIMARY KEY (`rola_id`,`dozvola_id`),
+  KEY `idx_rd_dozvola` (`dozvola_id`),
+  CONSTRAINT `fk_rd_rola` FOREIGN KEY (`rola_id`)
+      REFERENCES `korisnicke_role` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_rd_dozvola` FOREIGN KEY (`dozvola_id`)
+      REFERENCES `dozvole` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  COMMENT='Koje dozvole ima koja rola (M:N)';
+
+
+CREATE TABLE `korisnici` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `korisnicko_ime` VARCHAR(50) NOT NULL,
+  `email` VARCHAR(150) NOT NULL,
+  `lozinka_hash` VARCHAR(255) NOT NULL COMMENT 'password_hash() - bcrypt/argon2id, NIKAD plain tekst',
+  `zaposleni_id` INT UNSIGNED NULL COMMENT 'Povezani zaposleni (opciono - npr. spoljni admin nema HR zapis)',
+  `rola_id` INT UNSIGNED NOT NULL,
+  `aktivan` TINYINT(1) NOT NULL DEFAULT 1,
+  `mora_promeniti_lozinku` TINYINT(1) NOT NULL DEFAULT 0,
+  `poslednja_prijava` DATETIME NULL,
+  `broj_neuspesnih_prijava` SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+  `zakljucan_do` DATETIME NULL COMMENT 'Privremeno zaključavanje naloga posle više neuspešnih prijava',
+  `datum_kreiranja` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `datum_izmene` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_korisnik_korisnicko_ime` (`korisnicko_ime`),
+  UNIQUE KEY `uq_korisnik_email` (`email`),
+  UNIQUE KEY `uq_korisnik_zaposleni` (`zaposleni_id`),
+  KEY `idx_korisnik_rola` (`rola_id`),
+  CONSTRAINT `fk_korisnik_zaposleni` FOREIGN KEY (`zaposleni_id`)
+      REFERENCES `zaposleni` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_korisnik_rola` FOREIGN KEY (`rola_id`)
+      REFERENCES `korisnicke_role` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  COMMENT='Korisnički nalozi za prijavu u aplikaciju - svaki nalog ima tačno jednu rolu';
+
+
+-- =====================================================================================
 -- SEKCIJA 2: MATIČNA TABELA OSNOVNIH SREDSTAVA + FLEKSIBILNI ATRIBUTI
 -- =====================================================================================
 
@@ -252,7 +361,8 @@ CREATE TABLE `osnovna_sredstva` (
   `status_id` INT UNSIGNED NOT NULL,
   `lokacija_id` INT UNSIGNED NULL,
   `mesto_troska_id` INT UNSIGNED NULL,
-  `odgovorno_lice` VARCHAR(150) NULL COMMENT 'Ime i prezime zaduženog lica (tekstualno polje - bez FK na korisnike)',
+  `odgovorno_lice` VARCHAR(150) NULL COMMENT 'Slobodan tekst - koristi se samo kad zaduženo lice NIJE u evidenciji zaposlenih (npr. eksterni saradnik)',
+  `zaposleni_id` INT UNSIGNED NULL COMMENT 'Formalno zaduženo lice iz evidencije zaposlenih (preporučeni način dodele sredstva)',
   `dobavljac_id` INT UNSIGNED NULL,
   `nadredjeno_sredstvo_id` BIGINT UNSIGNED NULL COMMENT 'Za komponente/sastavne delove složenog sredstva',
   `nacin_sticanja` ENUM('KUPOVINA','SOPSTVENA_IZGRADNJA','FINANSIJSKI_LIZING','OPERATIVNI_LIZING','POKLON','ULOG','OSTALO')
@@ -296,6 +406,7 @@ CREATE TABLE `osnovna_sredstva` (
   KEY `idx_sredstvo_amort_grupa` (`amortizaciona_grupa_id`),
   KEY `idx_sredstvo_metoda_amort` (`metoda_amortizacije_id`),
   KEY `idx_sredstvo_datum_nabavke` (`datum_nabavke`),
+  KEY `idx_sredstvo_zaposleni` (`zaposleni_id`),
   CONSTRAINT `fk_sredstvo_klasa` FOREIGN KEY (`klasa_id`)
       REFERENCES `klase_osnovnih_sredstava` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT `fk_sredstvo_amort_grupa` FOREIGN KEY (`amortizaciona_grupa_id`)
@@ -311,7 +422,9 @@ CREATE TABLE `osnovna_sredstva` (
   CONSTRAINT `fk_sredstvo_dobavljac` FOREIGN KEY (`dobavljac_id`)
       REFERENCES `dobavljaci` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT `fk_sredstvo_nadredjeno` FOREIGN KEY (`nadredjeno_sredstvo_id`)
-      REFERENCES `osnovna_sredstva` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+      REFERENCES `osnovna_sredstva` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_sredstvo_zaposleni` FOREIGN KEY (`zaposleni_id`)
+      REFERENCES `zaposleni` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   COMMENT='Glavna (matična) tabela osnovnih sredstava';
 
@@ -447,16 +560,20 @@ CREATE TABLE `transakcije_sredstva` (
   `iznos` DECIMAL(18,2) NULL COMMENT 'Generički iznos - značenje zavisi od vrste transakcije',
   `knjigovodstvena_vrednost_pre` DECIMAL(18,2) NULL,
   `knjigovodstvena_vrednost_posle` DECIMAL(18,2) NULL,
-  `izvrsilac` VARCHAR(150) NULL COMMENT 'Ime lica koje je evidentiralo transakciju (tekstualno polje, bez FK na korisnike)',
+  `izvrsilac` VARCHAR(150) NULL COMMENT 'Ime lica koje je evidentiralo transakciju (slobodan tekst - fallback kad korisnik_id nije dostupan)',
+  `korisnik_id` INT UNSIGNED NULL COMMENT 'Sistemski korisnik koji je evidentirao transakciju (audit trag)',
   `napomena` TEXT NULL,
   `datum_kreiranja` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `idx_transakcija_sredstvo_datum` (`sredstvo_id`,`datum_transakcije`),
   KEY `idx_transakcija_vrsta` (`vrsta_transakcije_id`),
+  KEY `idx_transakcija_korisnik` (`korisnik_id`),
   CONSTRAINT `fk_transakcija_sredstvo` FOREIGN KEY (`sredstvo_id`)
       REFERENCES `osnovna_sredstva` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT `fk_transakcija_vrsta` FOREIGN KEY (`vrsta_transakcije_id`)
-      REFERENCES `vrste_transakcija` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+      REFERENCES `vrste_transakcija` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_transakcija_korisnik` FOREIGN KEY (`korisnik_id`)
+      REFERENCES `korisnici` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   COMMENT='Centralni dnevnik svih događaja u životnom ciklusu sredstva - jedinstvena istorija promena';
 
@@ -471,12 +588,15 @@ CREATE TABLE `premestaji_sredstva` (
   `staro_mesto_troska_id` INT UNSIGNED NULL,
   `novo_mesto_troska_id` INT UNSIGNED NULL,
   `staro_odgovorno_lice` VARCHAR(150) NULL,
+  `stari_zaposleni_id` INT UNSIGNED NULL,
   `novo_odgovorno_lice` VARCHAR(150) NULL,
+  `novi_zaposleni_id` INT UNSIGNED NULL,
   `napomena` TEXT NULL,
   PRIMARY KEY (`id`),
   KEY `idx_premestaj_sredstvo` (`sredstvo_id`),
   KEY `idx_premestaj_transakcija` (`transakcija_id`),
   KEY `idx_premestaj_nova_lokacija` (`nova_lokacija_id`),
+  KEY `idx_premestaj_novi_zaposleni` (`novi_zaposleni_id`),
   CONSTRAINT `fk_premestaj_transakcija` FOREIGN KEY (`transakcija_id`)
       REFERENCES `transakcije_sredstva` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_premestaj_sredstvo` FOREIGN KEY (`sredstvo_id`)
@@ -488,9 +608,13 @@ CREATE TABLE `premestaji_sredstva` (
   CONSTRAINT `fk_premestaj_staro_mesto_troska` FOREIGN KEY (`staro_mesto_troska_id`)
       REFERENCES `mesta_troska` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT `fk_premestaj_novo_mesto_troska` FOREIGN KEY (`novo_mesto_troska_id`)
-      REFERENCES `mesta_troska` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+      REFERENCES `mesta_troska` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_premestaj_stari_zaposleni` FOREIGN KEY (`stari_zaposleni_id`)
+      REFERENCES `zaposleni` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_premestaj_novi_zaposleni` FOREIGN KEY (`novi_zaposleni_id`)
+      REFERENCES `zaposleni` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-  COMMENT='Istorija premeštaja sredstva između lokacija, mesta troška i zaduženih lica';
+  COMMENT='Istorija premeštaja sredstva između lokacija, mesta troška i zaduženih lica (uključujući promene zaduženja)';
 
 
 CREATE TABLE `revalorizacije_sredstva` (
@@ -794,6 +918,59 @@ VALUES
   ((SELECT id FROM (SELECT id FROM `klase_osnovnih_sredstava` WHERE `sifra`='GRAD') AS t),
       'BROJ_KATASTARSKE_PARCELE','Broj katastarske parcele','TEKST',NULL,0,30);
 
+-- --- Korisničke role -------------------------------------------------------
+INSERT INTO `korisnicke_role` (`sifra`,`naziv`,`opis`) VALUES
+  ('ADMIN','Administrator','Pun pristup svim modulima i podešavanjima sistema'),
+  ('KNJIGOVODJA','Knjigovođa','Vođenje evidencije sredstava, amortizacije i popisa'),
+  ('MAGACIONER','Magacioner / zadužena osoba','Unos i zaduženje sredstava, učešće u popisu'),
+  ('PREGLED','Samo pregled','Read-only pristup evidenciji sredstava, bez izmena');
+
+-- --- Dozvole (grupisane po modulu radi lakšeg prikaza u UI) -------------------
+INSERT INTO `dozvole` (`sifra`,`naziv`,`modul`) VALUES
+  ('SREDSTVA_PREGLED','Pregled osnovnih sredstava','SREDSTVA'),
+  ('SREDSTVA_UNOS','Unos novog osnovnog sredstva','SREDSTVA'),
+  ('SREDSTVA_IZMENA','Izmena osnovnog sredstva','SREDSTVA'),
+  ('SREDSTVA_RASHODOVANJE','Rashodovanje i prodaja sredstva','SREDSTVA'),
+  ('KLASE_UPRAVLJANJE','Upravljanje klasama osnovnih sredstava','SIFARNICI'),
+  ('SIFARNICI_UPRAVLJANJE','Upravljanje ostalim šifarnicima (lokacije, mesta troška, dobavljači, amortizacione grupe/metode)','SIFARNICI'),
+  ('AMORTIZACIJA_OBRACUN','Pokretanje i knjiženje obračuna amortizacije','AMORTIZACIJA'),
+  ('POPIS_UPRAVLJANJE','Kreiranje i sprovođenje popisa (inventure)','POPIS'),
+  ('ZAPOSLENI_UPRAVLJANJE','Upravljanje evidencijom zaposlenih','KORISNICI'),
+  ('KORISNICI_UPRAVLJANJE','Upravljanje korisničkim nalozima, rolama i pravima pristupa','KORISNICI');
+
+-- --- Dodela dozvola rolama -----------------------------------------------------
+-- ADMIN dobija sve postojeće dozvole
+INSERT INTO `role_dozvole` (`rola_id`,`dozvola_id`)
+SELECT r.id, d.id
+FROM `korisnicke_role` r
+CROSS JOIN `dozvole` d
+WHERE r.sifra = 'ADMIN';
+
+-- KNJIGOVODJA
+INSERT INTO `role_dozvole` (`rola_id`,`dozvola_id`)
+SELECT r.id, d.id
+FROM `korisnicke_role` r
+CROSS JOIN `dozvole` d
+WHERE r.sifra = 'KNJIGOVODJA'
+  AND d.sifra IN ('SREDSTVA_PREGLED','SREDSTVA_UNOS','SREDSTVA_IZMENA','SREDSTVA_RASHODOVANJE',
+                   'KLASE_UPRAVLJANJE','SIFARNICI_UPRAVLJANJE','AMORTIZACIJA_OBRACUN','POPIS_UPRAVLJANJE');
+
+-- MAGACIONER
+INSERT INTO `role_dozvole` (`rola_id`,`dozvola_id`)
+SELECT r.id, d.id
+FROM `korisnicke_role` r
+CROSS JOIN `dozvole` d
+WHERE r.sifra = 'MAGACIONER'
+  AND d.sifra IN ('SREDSTVA_PREGLED','SREDSTVA_UNOS','SREDSTVA_IZMENA','POPIS_UPRAVLJANJE');
+
+-- PREGLED
+INSERT INTO `role_dozvole` (`rola_id`,`dozvola_id`)
+SELECT r.id, d.id
+FROM `korisnicke_role` r
+CROSS JOIN `dozvole` d
+WHERE r.sifra = 'PREGLED'
+  AND d.sifra = 'SREDSTVA_PREGLED';
+
 
 -- =====================================================================================
 -- SEKCIJA 10: POMOĆNI PREGLEDNI VIEW (opciono)
@@ -809,6 +986,7 @@ SELECT
     l.naziv AS lokacija,
     mt.naziv AS mesto_troska,
     os.odgovorno_lice,
+    CASE WHEN z.id IS NOT NULL THEN CONCAT(z.ime, ' ', z.prezime) ELSE NULL END AS zaduzeni_zaposleni,
     os.datum_nabavke,
     os.nabavna_vrednost,
     os.akumulirana_amortizacija,
@@ -818,7 +996,8 @@ FROM `osnovna_sredstva` os
 JOIN `klase_osnovnih_sredstava` k ON k.id = os.klasa_id
 JOIN `statusi_sredstva` s ON s.id = os.status_id
 LEFT JOIN `lokacije` l ON l.id = os.lokacija_id
-LEFT JOIN `mesta_troska` mt ON mt.id = os.mesto_troska_id;
+LEFT JOIN `mesta_troska` mt ON mt.id = os.mesto_troska_id
+LEFT JOIN `zaposleni` z ON z.id = os.zaposleni_id;
 
 
 SET FOREIGN_KEY_CHECKS = 1;
