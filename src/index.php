@@ -24,11 +24,12 @@ require_once 'header.php';
                 <th>Mesto Troška</th>
                 <th>Nabavna Vrednost</th>
                 <th>Datum Nabavke</th>
+                <th>Akcije</th>
             </tr>
         </thead>
         <tbody>
             <?php if (empty($sredstva)): ?>
-                <tr><td colspan="9" style="text-align:center;">Nema unetih osnovnih sredstava.</td></tr>
+                <tr><td colspan="10" style="text-align:center;">Nema unetih osnovnih sredstava.</td></tr>
             <?php else: ?>
                 <?php foreach ($sredstva as $row): ?>
                     <tr>
@@ -41,6 +42,10 @@ require_once 'header.php';
                         <td><?= htmlspecialchars($row['mesto_troska'] ?? 'Nije dodeljeno') ?></td>
                         <td><?= number_format($row['nabavna_vrednost'], 2, ',', '.') ?> RSD</td>
                         <td><?= htmlspecialchars($row['datum_nabavke']) ?></td>
+                        <td class="akcije">
+                            <a href="os_pregled.php?id=<?= $row['id'] ?>">Pregled</a>
+                            <a href="os_form.php?id=<?= $row['id'] ?>">Izmeni</a>
+                        </td>
                     </tr>
                 <?php endforeach; ?>
             <?php endif; ?>
