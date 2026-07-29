@@ -148,3 +148,21 @@ textarea { resize: vertical; min-height: 60px; }
     font-family: inherit;
 }
 .akcije a:hover, .akcije button:hover { text-decoration: underline; }
+
+/* --- Stranica za detaljan pregled (read-only prikaz jednog sredstva) --- */
+.detalj-sekcija {
+    font-weight: bold;
+    margin: 20px 0 10px;
+    padding-top: 10px;
+    border-top: 1px solid #eee;
+    color: #007bff;
+}
+.detalj-sekcija:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
+.detalj-red {
+    display: flex;
+    flex-wrap: wrap;
+    padding: 6px 0;
+    border-bottom: 1px solid #f4f6f9;
+}
+.detalj-labela { flex: 0 0 240px; font-weight: bold; color: #555; }
+.detalj-vrednost { flex: 1; min-width: 200px; }
