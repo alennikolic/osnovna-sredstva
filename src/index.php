@@ -4,34 +4,13 @@ require_once 'db.php';
 // Dohvatanje podataka iz pomoćnog view-a definisanog u SQL šemi
 $stmt = $pdo->query("SELECT * FROM pregled_osnovnih_sredstava ORDER BY id DESC");
 $sredstva = $stmt->fetchAll();
-?>
-<!DOCTYPE html>
-<html lang="sr">
-<head>
-    <meta charset="UTF-8">
-    <title>Osnovna Sredstva - Pregled</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; background: #f4f6f9; }
-        h1 { color: #333; }
-        .nav-bar { margin-bottom: 20px; }
-        .nav-bar a { margin-right: 15px; color: #007bff; text-decoration: none; font-weight: bold; }
-        .nav-bar a:hover { text-decoration: underline; }
-        .btn { display: inline-block; padding: 10px 15px; background: #28a745; color: #fff; text-decoration: none; border-radius: 4px; margin-bottom: 15px; }
-        table { width: 100%; border-collapse: collapse; background: #fff; }
-        th, td { padding: 10px; border: 1px solid #ddd; text-align: left; }
-        th { background: #007bff; color: white; }
-        tr:nth-child(even) { background: #f9f9f9; }
-    </style>
-</head>
-<body>
 
-    <div class="nav-bar">
-        <a href="index.php">Osnovna sredstva</a>
-        <a href="klase_index.php">Klase osnovnih sredstava</a>
-    </div>
+$naslovStranice = 'Osnovna Sredstva - Pregled';
+require_once 'header.php';
+?>
 
     <h1>Evidencija osnovnih sredstava</h1>
-    <a href="os_form.php" class="btn">+ Novo Osnovno Sredstvo</a>
+    <a href="os_form.php" class="btn-add">+ Novo Osnovno Sredstvo</a>
 
     <table>
         <thead>
@@ -68,5 +47,4 @@ $sredstva = $stmt->fetchAll();
         </tbody>
     </table>
 
-</body>
-</html>
+<?php require_once 'footer.php'; ?>
