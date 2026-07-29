@@ -16,17 +16,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             $sql = "INSERT INTO osnovna_sredstva 
                     (inventarski_broj, naziv, klasa_id, status_id, nabavna_vrednost, osnovica_za_amortizaciju, sadasnja_knjigovodstvena_vrednost, datum_nabavke, odgovorno_lice) 
-                    VALUES (:inv, :naziv, :klasa, :status, :vrednost, :vrednost, :vrednost, :datum, :lice)";
+                    VALUES (:inv, :naziv, :klasa, :status, :vrednost1, :vrednost2, :vrednost3, :datum, :lice)";
             
             $stmt = $pdo->prepare($sql);
             $stmt->execute([
-                ':inv' => $inventarski_broj,
-                ':naziv' => $naziv,
-                ':klasa' => $klasa_id,
-                ':status' => $status_id,
-                ':vrednost' => $nabavna_vrednost,
-                ':datum' => $datum_nabavke,
-                ':lice' => $odgovorno_lice
+                ':inv'       => $inventarski_broj,
+                ':naziv'     => $naziv,
+                ':klasa'     => $klasa_id,
+                ':status'    => $status_id,
+                ':vrednost1' => $nabavna_vrednost,
+                ':vrednost2' => $nabavna_vrednost,
+                ':vrednost3' => $nabavna_vrednost,
+                ':datum'     => $datum_nabavke,
+                ':lice'      => $odgovorno_lice
             ]);
 
             header("Location: index.php");
