@@ -154,42 +154,12 @@ $tipoviSredstva = [
     'NEMATERIJALNO' => 'Nematerijalno',
     'INVESTICIONA_NEKRETNINA' => 'Investiciona nekretnina',
 ];
+
+$naslovStranice = ($izmena ? 'Izmena klase' : 'Nova klasa') . ' osnovnog sredstva';
+require_once 'header.php';
 ?>
-<!DOCTYPE html>
-<html lang="sr">
-<head>
-    <meta charset="UTF-8">
-    <title><?= $izmena ? 'Izmena klase' : 'Nova klasa' ?> osnovnog sredstva</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; background: #f4f6f9; }
-        .nav-bar { margin-bottom: 20px; }
-        .nav-bar a { margin-right: 15px; color: #007bff; text-decoration: none; font-weight: bold; }
-        .nav-bar a:hover { text-decoration: underline; }
-        .form-container { background: #fff; padding: 20px; max-width: 650px; border-radius: 5px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
-        .form-group { margin-bottom: 15px; }
-        label { display: block; margin-bottom: 5px; font-weight: bold; }
-        input[type="text"], input[type="number"], select, textarea { width: 100%; padding: 8px; box-sizing: border-box; }
-        textarea { resize: vertical; min-height: 60px; font-family: inherit; }
-        .checkbox-group { display: flex; align-items: center; gap: 8px; }
-        .checkbox-group input { width: auto; }
-        .checkbox-group label { margin-bottom: 0; }
-        .red-2 { display: flex; gap: 15px; }
-        .red-2 .form-group { flex: 1; min-width: 0; }
-        .btn { padding: 10px 15px; background: #007bff; color: white; border: none; cursor: pointer; border-radius: 4px; }
-        .btn-cancel { background: #6c757d; text-decoration: none; padding: 10px 15px; color: white; border-radius: 4px; display: inline-block; }
-        .error { color: #721c24; background: #f8d7da; padding: 10px; border-radius: 4px; margin-bottom: 15px; }
-        .napomena-polje { font-weight: normal; font-size: 12px; color: #666; }
-        .naslov-podsekcije { font-weight: bold; margin: 20px 0 10px; padding-top: 10px; border-top: 1px solid #eee; }
-    </style>
-</head>
-<body>
 
-<div class="nav-bar">
-    <a href="index.php">Osnovna sredstva</a>
-    <a href="klase_index.php">Klase osnovnih sredstava</a>
-</div>
-
-<div class="form-container">
+<div class="form-container forma-siroka">
     <h2><?= $izmena ? 'Izmena klase: ' . htmlspecialchars($podaci['naziv']) : 'Nova klasa osnovnog sredstva' ?></h2>
 
     <?php if ($poruka): ?>
@@ -290,5 +260,4 @@ $tipoviSredstva = [
     </form>
 </div>
 
-</body>
-</html>
+<?php require_once 'footer.php'; ?>
