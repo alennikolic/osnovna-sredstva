@@ -16,7 +16,7 @@ $trenutnaStranica = basename($_SERVER['SCRIPT_NAME']);
 // 'sekcija' je lista fajlova koji pripadaju istoj celini - npr. i pregled i
 // forma za unos osnovnih sredstava treba da drže istu stavku menija aktivnom.
 $stavkeMenija = [
-    ['naziv' => 'Osnovna sredstva', 'link' => 'index.php', 'sekcija' => ['index.php', 'os_form.php']],
+    ['naziv' => 'Osnovna sredstva', 'link' => 'index.php', 'sekcija' => ['index.php', 'os_form.php', 'os_pregled.php']],
     ['naziv' => 'Klase osnovnih sredstava', 'link' => 'klase_index.php', 'sekcija' => ['klase_index.php', 'klase_form.php']],
     ['naziv' => 'Zaposleni', 'link' => 'zaposleni_index.php', 'sekcija' => ['zaposleni_index.php', 'zaposleni_form.php']],
 ];
