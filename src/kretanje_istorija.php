@@ -27,8 +27,12 @@ $uslovi = [];
 $parametri = [];
 
 if ($filterPojam !== '') {
-    $uslovi[] = "(os.inventarski_broj LIKE :pojam OR os.naziv LIKE :pojam)";
-    $parametri[':pojam'] = '%' . $filterPojam . '%';
+    // NAPOMENA: MySQL-ov native prepared statement ne dozvoljava da se isti
+    // imenovani parametar (:pojam) pojavi dva puta u istom upitu - zato dva
+    // odvojena imena (:pojam1, :pojam2) sa istom vrednošću.
+    $uslovi[] = "(os.inventarski_broj LIKE :pojam1 OR os.naziv LIKE :pojam2)";
+    $parametri[':pojam1'] = '%' . $filterPojam . '%';
+    $parametri[':pojam2'] = '%' . $filterPojam . '%';
 }
 if ($filterVrstaId !== '') {
     $uslovi[] = "t.vrsta_transakcije_id = :vrsta";
