@@ -3,9 +3,10 @@
  * premestaji_pregled.php
  * -----------------------
  * Pregled jednog dokumenta premeštaja. Dok je status U_PRIPREMI, dostupne su
- * akcije "Izdaj premeštaj" (stvarna promena lokacije/mesta troška) i "Poništi
- * nacrt". Nakon izdavanja, dokument je nepromenljiv i može se odštampati.
- * Nema statusa "vraćeno" - premeštaj je jednosmerna promena.
+ * akcije "Izdaj premeštaj", "Poništi nacrt", i uređivanje stavki (dodavanje/
+ * uklanjanje sredstava sa nacrta pre izdavanja) - isti obrazac kao kod
+ * revers_pregled.php. Nakon izdavanja, dokument je nepromenljiv i može se
+ * odštampati. Nema statusa "vraćeno" - premeštaj je jednosmerna promena.
  */
 
 require_once 'auth.php';
@@ -46,6 +47,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['akcija'])) {
             exit;
         } catch (\PDOException $e) {
             $poruka = "Greška pri poništavanju: " . $e->getMessage();
+        }
+    }
+
+    if ($_POST['akcija'] === 'dodaj_stavke' && $dokument['status'] === 'U_PRIPREMI') {
+        $novaSredstva = array_map('intval', $_POST['sredstva'] ?? []);
+        if (empty($novaSredstva)) {
+            $poruka = "Izaberite bar jedno sredstvo za dodavanje.";
+        } else {
+            try {
+                $stmtProveri = $pdo->prepare(
+                    "SELECT COUNT(*) FROM stavke_premestaja WHERE dokument_premestaja_id = :dokument AND sredstvo_id = :sredstvo"
+                );
+                $stmtDodaj = $pdo->prepare(
+                    "INSERT INTO stavke_premestaja (dokument_premestaja_id, sredstvo_id) VALUES (:dokument, :sredstvo)"
+                );
+                foreach ($novaSredstva as $sredstvoId) {
+                    $stmtProveri->execute([':dokument' => $id, ':sredstvo' => $sredstvoId]);
+                    if ((int)$stmtProveri->fetchColumn() > 0) {
+                        continue; // već je na nacrtu - preskoči
+                    }
+                    $stmtDodaj->execute([':dokument' => $id, ':sredstvo' => $sredstvoId]);
+                }
+                header("Location: premestaji_pregled.php?id=" . $id);
+                exit;
+            } catch (\PDOException $e) {
+                $poruka = "Greška pri dodavanju stavki: " . $e->getMessage();
+            }
+        }
+    }
+
+    if ($_POST['akcija'] === 'ukloni_stavku' && $dokument['status'] === 'U_PRIPREMI') {
+        $stavkaId = isset($_POST['stavka_id']) ? (int)$_POST['stavka_id'] : 0;
+        $ukupnoStavki = (int)$pdo->query(
+            "SELECT COUNT(*) FROM stavke_premestaja WHERE dokument_premestaja_id = " . (int)$id
+        )->fetchColumn();
+
+        if ($ukupnoStavki <= 1) {
+            $poruka = "Dokument mora imati bar jednu stavku - dodajte drugu pre uklanjanja poslednje, ili poništite ceo nacrt.";
+        } else {
+            try {
+                $pdo->prepare("DELETE FROM stavke_premestaja WHERE id = :id AND dokument_premestaja_id = :dokument")
+                    ->execute([':id' => $stavkaId, ':dokument' => $id]);
+                header("Location: premestaji_pregled.php?id=" . $id);
+                exit;
+            } catch (\PDOException $e) {
+                $poruka = "Greška pri uklanjanju stavke: " . $e->getMessage();
+            }
         }
     }
 
@@ -198,6 +246,35 @@ $stmt = $pdo->prepare(
 $stmt->execute([':id' => $id]);
 $stavke = $stmt->fetchAll();
 
+// Dostupna sredstva za DODAVANJE na nacrt - sva sredstva u nezavršnom
+// statusu, MINUS ona koja su već na ovom dokumentu. Učitava se samo dok je
+// dokument U_PRIPREMI.
+$dostupnaSredstva = [];
+if ($dokument['status'] === 'U_PRIPREMI') {
+    $vecNaDokumentu = array_column($stavke, 'sredstvo_id');
+
+    $sql = "SELECT os.id, os.inventarski_broj, os.naziv, k.naziv AS naziv_klase,
+                   l.naziv AS trenutna_lokacija, mt.naziv AS trenutno_mesto_troska
+            FROM osnovna_sredstva os
+            JOIN klase_osnovnih_sredstava k ON k.id = os.klasa_id
+            JOIN statusi_sredstva s ON s.id = os.status_id
+            LEFT JOIN lokacije l ON l.id = os.lokacija_id
+            LEFT JOIN mesta_troska mt ON mt.id = os.mesto_troska_id
+            WHERE s.da_li_je_zavrsni_status = 0";
+
+    $parametri = [];
+    if (!empty($vecNaDokumentu)) {
+        $placeholderi = implode(',', array_fill(0, count($vecNaDokumentu), '?'));
+        $sql .= " AND os.id NOT IN ($placeholderi)";
+        $parametri = $vecNaDokumentu;
+    }
+    $sql .= " ORDER BY os.naziv";
+
+    $stmtDostupna = $pdo->prepare($sql);
+    $stmtDostupna->execute($parametri);
+    $dostupnaSredstva = $stmtDostupna->fetchAll();
+}
+
 $mapaStatusa = [
     'U_PRIPREMI' => ['U pripremi', 'oznaka-u-toku'],
     'IZDAT'      => ['Izdat', 'oznaka-aktivna'],
@@ -265,8 +342,12 @@ require_once 'header.php';
                 <th>Inventarski broj</th>
                 <th>Naziv</th>
                 <th>Klasa</th>
-                <th>Lokacija (staro → novo)</th>
-                <th>Mesto troška (staro → novo)</th>
+                <?php if ($dokument['status'] === 'U_PRIPREMI'): ?>
+                    <th>Akcije</th>
+                <?php else: ?>
+                    <th>Lokacija (staro → novo)</th>
+                    <th>Mesto troška (staro → novo)</th>
+                <?php endif; ?>
             </tr>
         </thead>
         <tbody>
@@ -275,19 +356,49 @@ require_once 'header.php';
                     <td><?= htmlspecialchars($s['inventarski_broj']) ?></td>
                     <td><?= htmlspecialchars($s['naziv']) ?></td>
                     <td><?= htmlspecialchars($s['naziv_klase']) ?></td>
-                    <?php if ($s['izvrseno_id']): ?>
+                    <?php if ($dokument['status'] === 'U_PRIPREMI'): ?>
+                        <td class="akcije">
+                            <form method="POST" style="display:inline;" onsubmit="return confirm('Ukloniti ovu stavku sa nacrta premeštaja?');">
+                                <input type="hidden" name="akcija" value="ukloni_stavku">
+                                <input type="hidden" name="stavka_id" value="<?= $s['stavka_id'] ?>">
+                                <button type="submit" class="btn" style="background:#dc3545; padding:2px 10px; font-size:12px;">Ukloni</button>
+                            </form>
+                        </td>
+                    <?php elseif ($s['izvrseno_id']): ?>
                         <td><?= htmlspecialchars($s['stara_lokacija'] ?? '—') ?> → <?= htmlspecialchars($s['nova_lokacija'] ?? '—') ?></td>
                         <td><?= htmlspecialchars($s['staro_mesto_troska'] ?? '—') ?> → <?= htmlspecialchars($s['novo_mesto_troska'] ?? '—') ?></td>
-                    <?php elseif ($dokument['status'] === 'IZDAT'): ?>
-                        <td colspan="2" class="napomena-polje">Bez promene (već na izabranoj lokaciji/mestu troška)</td>
                     <?php else: ?>
-                        <td colspan="2" class="napomena-polje">Čeka izdavanje</td>
+                        <td colspan="2" class="napomena-polje">Bez promene (već na izabranoj lokaciji/mestu troška)</td>
                     <?php endif; ?>
                 </tr>
             <?php endforeach; ?>
         </tbody>
     </table>
 </div>
+
+<?php if ($dokument['status'] === 'U_PRIPREMI'): ?>
+<div class="form-container forma-siroka" style="margin-top: 20px;">
+    <h3 style="margin-top:0;">Dodaj stavke na nacrt</h3>
+    <?php if (empty($dostupnaSredstva)): ?>
+        <p class="napomena-polje">Nema dodatnih dostupnih sredstava za dodavanje.</p>
+    <?php else: ?>
+        <form method="POST" action="">
+            <input type="hidden" name="akcija" value="dodaj_stavke">
+            <div class="lista-checkboxova">
+                <?php foreach ($dostupnaSredstva as $sr): ?>
+                    <label class="stavka-checkboxa">
+                        <input type="checkbox" name="sredstva[]" value="<?= $sr['id'] ?>">
+                        <?= htmlspecialchars($sr['inventarski_broj'] . ' - ' . $sr['naziv']) ?>
+                        <span class="napomena-polje">(<?= htmlspecialchars($sr['naziv_klase']) ?>)</span>
+                        <span class="napomena-polje">— trenutno: <?= htmlspecialchars($sr['trenutna_lokacija'] ?? '—') ?> / <?= htmlspecialchars($sr['trenutno_mesto_troska'] ?? '—') ?></span>
+                    </label>
+                <?php endforeach; ?>
+            </div>
+            <button type="submit" class="btn" style="margin-top: 10px;">Dodaj izabrana sredstva</button>
+        </form>
+    <?php endif; ?>
+</div>
+<?php endif; ?>
 
 <div style="margin-top: 20px;">
     <a href="premestaji_index.php" class="btn-cancel">Nazad na listu premeštaja</a>
