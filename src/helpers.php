@@ -253,3 +253,33 @@ function pronadjiPotomkeMesta(array $sveMesta, int $roditeljId): array
     }
     return $potomci;
 }
+
+/**
+ * Vraća [prikazni_naziv, css_klasa_oznake] za status popisne kampanje
+ * (U_PRIPREMI / U_TOKU / ZAVRSEN / OTKAZAN).
+ */
+function oznakaStatusaPopisa(string $status): array
+{
+    $mapa = [
+        'U_PRIPREMI' => ['U pripremi', 'oznaka-neaktivna'],
+        'U_TOKU'     => ['U toku', 'oznaka-u-toku'],
+        'ZAVRSEN'    => ['Završen', 'oznaka-aktivna'],
+        'OTKAZAN'    => ['Otkazan', 'oznaka-otkazana'],
+    ];
+    return $mapa[$status] ?? [$status, 'oznaka-neaktivna'];
+}
+
+/**
+ * Vraća [prikazni_naziv, css_klasa_oznake] za rezultat popisa pojedinačnog
+ * sredstva (popisano_stanje). $stanje je null ako sredstvo još nije popisano
+ * u okviru date popisne kampanje.
+ */
+function oznakaPopisanogStanja(?string $stanje): array
+{
+    $mapa = [
+        'PRONADJENO'      => ['Pronađeno', 'oznaka-aktivna'],
+        'NIJE_PRONADJENO' => ['Nije pronađeno', 'oznaka-otkazana'],
+        'VISAK'           => ['Višak', 'oznaka-u-toku'],
+    ];
+    return $mapa[$stanje] ?? ['Nije popisano', 'oznaka-neaktivna'];
+}
