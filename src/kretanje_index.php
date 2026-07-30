@@ -2,11 +2,7 @@
 /**
  * kretanje_index.php
  * -------------------
- * Čvorna (hub) stranica menija "Evidencija kretanja" - objedinjuje na jednom
- * mestu sve akcije vezane za kretanje osnovnih sredstava: premeštaj (promena
- * lokacije/mesta troška) i zaduženje putem reversa (izdavanje automatski
- * razdužuje eventualno prethodno zaduženje - nema više posebne akcije
- * "razduženje"), i objedinjenu istoriju svih transakcija.
+ * Čvorna (hub) stranica menija "Evidencija kretanja".
  */
 
 require_once 'auth.php';
@@ -36,6 +32,12 @@ require_once 'header.php';
         <p class="napomena-polje">Zaduživanje sredstva zaposlenom putem reversa. Izdavanje novog reversa automatski razdužuje sredstvo sa eventualnog prethodnog reversa.</p>
         <a href="revers_form.php" class="btn">+ Novi revers</a>
         <a href="reversi_index.php" class="btn-cancel" style="margin-left:8px;">Pregled reversa</a>
+    </div>
+
+    <div class="form-container" style="flex:1; min-width:260px; margin:0;">
+        <h3 style="margin-top:0;">Zaduženja po zaposlenom</h3>
+        <p class="napomena-polje">Pregled ko trenutno šta drži - grupisano po zaposlenom, korisno pre popisa.</p>
+        <a href="zaduzenja_pregled.php" class="btn">Otvori pregled</a>
     </div>
 
     <div class="form-container" style="flex:1; min-width:260px; margin:0;">
