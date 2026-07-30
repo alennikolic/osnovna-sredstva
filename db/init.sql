@@ -1092,6 +1092,54 @@ INSERT IGNORE INTO `vrste_transakcija` (`sifra`,`naziv`,`opis`,`utice_na_knjigov
 INSERT IGNORE INTO `vrste_transakcija` (`sifra`,`naziv`,`opis`,`utice_na_knjigovodstvenu_vrednost`,`smer_uticaja`) VALUES
   ('ZADUZENJE','Zaduženje sredstva','Izdavanje sredstva zaposlenom putem reversa',0,'NEUTRALNO');
 
+
+
+
+-- =====================================================================================
+-- IZMENA ŠEME: Dokument premeštaja (broj dokumenta + štampa)
+-- =====================================================================================
+-- Do sada je premeštaj postojao samo kao niz pojedinačnih redova u
+-- premestaji_sredstva, bez zajedničkog broja dokumenta. Ovim se dodaje
+-- zaglavlje dokumenta (broj, datum, izabrana nova lokacija/mesto troška,
+-- ko je izvršio) - isti obrazac kao `reversi` za zaduženje. Grupni premeštaj
+-- više sredstava odjednom sada dobija JEDAN broj dokumenta koji povezuje sve
+-- pojedinačne stavke u premestaji_sredstva.
+
+CREATE TABLE `dokumenti_premestaja` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `broj_dokumenta` VARCHAR(30) NOT NULL COMMENT 'npr. PREM-2026-001 - generiše se automatski',
+  `datum_premestaja` DATE NOT NULL,
+  `nova_lokacija_id` INT UNSIGNED NULL COMMENT 'Izabrana nova lokacija na formi (NULL ako se lokacija ne menja ovim dokumentom)',
+  `novo_mesto_troska_id` INT UNSIGNED NULL COMMENT 'Izabrano novo mesto troška na formi (NULL ako se ne menja ovim dokumentom)',
+  `korisnik_id` INT UNSIGNED NULL COMMENT 'Sistemski korisnik koji je izvršio premeštaj (audit trag)',
+  `napomena` TEXT NULL,
+  `datum_kreiranja` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_dokument_premestaja_broj` (`broj_dokumenta`),
+  KEY `idx_dokument_premestaja_lokacija` (`nova_lokacija_id`),
+  KEY `idx_dokument_premestaja_mesto_troska` (`novo_mesto_troska_id`),
+  KEY `idx_dokument_premestaja_korisnik` (`korisnik_id`),
+  CONSTRAINT `fk_dokument_premestaja_lokacija` FOREIGN KEY (`nova_lokacija_id`)
+      REFERENCES `lokacije` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_dokument_premestaja_mesto_troska` FOREIGN KEY (`novo_mesto_troska_id`)
+      REFERENCES `mesta_troska` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_dokument_premestaja_korisnik` FOREIGN KEY (`korisnik_id`)
+      REFERENCES `korisnici` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  COMMENT='Dokument (zaglavlje) grupnog premeštaja - broj dokumenta za štampu, povezuje više stavki u premestaji_sredstva';
+
+ALTER TABLE `premestaji_sredstva`
+  ADD COLUMN `dokument_premestaja_id` INT UNSIGNED NULL COMMENT 'Zaglavlje dokumenta premeštaja - NULL za zapise nastale pre uvođenja dokumenta' AFTER `id`,
+  ADD KEY `idx_premestaj_dokument` (`dokument_premestaja_id`),
+  ADD CONSTRAINT `fk_premestaj_dokument` FOREIGN KEY (`dokument_premestaja_id`)
+      REFERENCES `dokumenti_premestaja` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+
+
+
+
+
+
 -- =====================================================================================
 -- PRIMER (SEED) PODACI: Lokacije, mesta troška, zaposleni, osnovna sredstva
 -- =====================================================================================
