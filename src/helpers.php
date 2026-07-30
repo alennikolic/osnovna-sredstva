@@ -314,3 +314,19 @@ function sledeciBrojReversa(PDO $pdo): string
 
     return $prefiks . str_pad((string)$sledeciBroj, 3, '0', STR_PAD_LEFT);
 }
+
+/**
+ * Vraća [prikazni_naziv, css_klasa_oznake] za status reversa
+ * (IZDAT / DELIMICNO_VRACEN / VRACEN / PONISTEN) - isti obrazac kao
+ * oznakaStatusaPopisa().
+ */
+function oznakaStatusaReversa(string $status): array
+{
+    $mapa = [
+        'IZDAT'            => ['Izdat', 'oznaka-aktivna'],
+        'DELIMICNO_VRACEN' => ['Delimično vraćen', 'oznaka-u-toku'],
+        'VRACEN'           => ['Vraćen', 'oznaka-neaktivna'],
+        'PONISTEN'         => ['Poništen', 'oznaka-otkazana'],
+    ];
+    return $mapa[$status] ?? [$status, 'oznaka-neaktivna'];
+}
