@@ -283,3 +283,34 @@ function oznakaPopisanogStanja(?string $stanje): array
     ];
     return $mapa[$stanje] ?? ['Nije popisano', 'oznaka-neaktivna'];
 }
+
+/**
+ * Generiše sledeći redni broj reversa u formatu REV-GODINA-NNN (npr.
+ * REV-2026-001), sekvencijalno po godini. Ako u tekućoj godini već postoje
+ * reversi, nastavlja se na poslednji broj; inače kreće od 001.
+ *
+ * NAPOMENA: kod istovremenog kreiranja dva reversa u istom trenutku postoji
+ * teorijska mala šansa da dva korisnika dobiju isti broj - u tom slučaju
+ * UNIQUE KEY na broj_reversa baca grešku, koju forma za unos hvata i traži
+ * od korisnika da pokuša ponovo (dovoljno za obim ove aplikacije).
+ */
+function sledeciBrojReversa(PDO $pdo): string
+{
+    $godina = date('Y');
+    $prefiks = "REV-{$godina}-";
+
+    $stmt = $pdo->prepare(
+        "SELECT broj_reversa FROM reversi
+         WHERE broj_reversa LIKE :prefiks
+         ORDER BY broj_reversa DESC LIMIT 1"
+    );
+    $stmt->execute([':prefiks' => $prefiks . '%']);
+    $poslednji = $stmt->fetchColumn();
+
+    $sledeciBroj = 1;
+    if ($poslednji) {
+        $sledeciBroj = (int)substr($poslednji, strlen($prefiks)) + 1;
+    }
+
+    return $prefiks . str_pad((string)$sledeciBroj, 3, '0', STR_PAD_LEFT);
+}
