@@ -330,3 +330,28 @@ function oznakaStatusaReversa(string $status): array
     ];
     return $mapa[$status] ?? [$status, 'oznaka-neaktivna'];
 }
+/**
+ * Generiše sledeći redni broj dokumenta premeštaja u formatu PREM-GODINA-NNN
+ * (npr. PREM-2026-001), sekvencijalno po godini - isti obrazac kao
+ * sledeciBrojReversa().
+ */
+function sledeciBrojPremestaja(PDO $pdo): string
+{
+    $godina = date('Y');
+    $prefiks = "PREM-{$godina}-";
+
+    $stmt = $pdo->prepare(
+        "SELECT broj_dokumenta FROM dokumenti_premestaja
+         WHERE broj_dokumenta LIKE :prefiks
+         ORDER BY broj_dokumenta DESC LIMIT 1"
+    );
+    $stmt->execute([':prefiks' => $prefiks . '%']);
+    $poslednji = $stmt->fetchColumn();
+
+    $sledeciBroj = 1;
+    if ($poslednji) {
+        $sledeciBroj = (int)substr($poslednji, strlen($prefiks)) + 1;
+    }
+
+    return $prefiks . str_pad((string)$sledeciBroj, 3, '0', STR_PAD_LEFT);
+}
