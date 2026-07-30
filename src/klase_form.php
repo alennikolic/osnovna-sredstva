@@ -29,6 +29,7 @@ $podaci = [
     'konto_nabavne_vrednosti' => '',
     'konto_ispravke_vrednosti' => '',
     'konto_troska_amortizacije' => '',
+    'ukljucuje_se_u_popis' => 1,
     'aktivna' => 1,
 ];
 
@@ -43,6 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $podaci['konto_nabavne_vrednosti'] = trim($_POST['konto_nabavne_vrednosti'] ?? '');
     $podaci['konto_ispravke_vrednosti'] = trim($_POST['konto_ispravke_vrednosti'] ?? '');
     $podaci['konto_troska_amortizacije'] = trim($_POST['konto_troska_amortizacije'] ?? '');
+    $podaci['ukljucuje_se_u_popis'] = isset($_POST['ukljucuje_se_u_popis']) ? 1 : 0;
     $podaci['aktivna'] = isset($_POST['aktivna']) ? 1 : 0;
 
     if ($podaci['sifra'] === '' || $podaci['naziv'] === '') {
@@ -60,6 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':konto1'      => $podaci['konto_nabavne_vrednosti'] !== '' ? $podaci['konto_nabavne_vrednosti'] : null,
                 ':konto2'      => $podaci['konto_ispravke_vrednosti'] !== '' ? $podaci['konto_ispravke_vrednosti'] : null,
                 ':konto3'      => $podaci['konto_troska_amortizacije'] !== '' ? $podaci['konto_troska_amortizacije'] : null,
+                ':popis'       => $podaci['ukljucuje_se_u_popis'],
                 ':aktivna'     => $podaci['aktivna'],
             ];
 
@@ -85,6 +88,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             konto_nabavne_vrednosti = :konto1,
                             konto_ispravke_vrednosti = :konto2,
                             konto_troska_amortizacije = :konto3,
+                            ukljucuje_se_u_popis = :popis,
                             aktivna = :aktivna
                         WHERE id = :id";
                 $parametri[':id'] = $id;
@@ -92,10 +96,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $sql = "INSERT INTO klase_osnovnih_sredstava
                             (sifra, naziv, opis, nadredjena_klasa_id, tip_sredstva, amortizaciona_grupa_id,
                              metoda_amortizacije_id, konto_nabavne_vrednosti, konto_ispravke_vrednosti,
-                             konto_troska_amortizacije, aktivna)
+                             konto_troska_amortizacije, ukljucuje_se_u_popis, aktivna)
                         VALUES
                             (:sifra, :naziv, :opis, :nadredjena, :tip, :amortGrupa,
-                             :metodaAmort, :konto1, :konto2, :konto3, :aktivna)";
+                             :metodaAmort, :konto1, :konto2, :konto3, :popis, :aktivna)";
             }
 
             $stmt = $pdo->prepare($sql);
@@ -134,6 +138,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $podaci['konto_nabavne_vrednosti'] = $postojeca['konto_nabavne_vrednosti'] ?? '';
     $podaci['konto_ispravke_vrednosti'] = $postojeca['konto_ispravke_vrednosti'] ?? '';
     $podaci['konto_troska_amortizacije'] = $postojeca['konto_troska_amortizacije'] ?? '';
+    $podaci['ukljucuje_se_u_popis'] = (int)$postojeca['ukljucuje_se_u_popis'];
     $podaci['aktivna'] = (int)$postojeca['aktivna'];
 }
 
@@ -250,6 +255,11 @@ require_once 'header.php';
                 <label class="napomena-polje">Konto troška amortizacije</label>
                 <input type="text" name="konto_troska_amortizacije" maxlength="20" value="<?= htmlspecialchars($podaci['konto_troska_amortizacije']) ?>">
             </div>
+        </div>
+
+        <div class="form-group checkbox-group">
+            <input type="checkbox" name="ukljucuje_se_u_popis" id="ukljucuje_se_u_popis" <?= $podaci['ukljucuje_se_u_popis'] ? 'checked' : '' ?>>
+            <label for="ukljucuje_se_u_popis">Sredstva ove klase uključuju se u fizički popis <span class="napomena-polje">(isključi npr. za nematerijalna ulaganja)</span></label>
         </div>
 
         <div class="form-group checkbox-group">

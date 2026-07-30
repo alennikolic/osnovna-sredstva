@@ -61,6 +61,7 @@ $stmt = $pdo->prepare(
      LEFT JOIN stavke_popisa sp ON sp.sredstvo_id = os.id AND sp.popis_id = :popis_id
      LEFT JOIN lokacije pl ON pl.id = sp.popisana_lokacija_id
      WHERE s.da_li_je_zavrsni_status = 0
+       AND k.ukljucuje_se_u_popis = 1
      ORDER BY os.naziv"
 );
 $stmt->execute([':popis_id' => $id]);

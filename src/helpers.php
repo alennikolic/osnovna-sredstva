@@ -27,7 +27,7 @@ function ucitajKlaseHijerarhijski(PDO $pdo): array
             k.id, k.sifra, k.naziv, k.opis, k.nadredjena_klasa_id, k.tip_sredstva,
             k.amortizaciona_grupa_id, k.metoda_amortizacije_id,
             k.konto_nabavne_vrednosti, k.konto_ispravke_vrednosti, k.konto_troska_amortizacije,
-            k.aktivna,
+            k.ukljucuje_se_u_popis, k.aktivna,
             ag.naziv AS naziv_amort_grupe,
             ma.naziv AS naziv_metode_amort
         FROM klase_osnovnih_sredstava k
