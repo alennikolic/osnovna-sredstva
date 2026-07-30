@@ -1,4 +1,6 @@
 <?php
+require_once 'auth.php';
+zahtevajPrijavu();
 require_once 'db.php';
 
 $id = isset($_GET['id']) && $_GET['id'] !== '' ? (int)$_GET['id'] : null;
