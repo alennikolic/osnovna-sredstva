@@ -1081,5 +1081,18 @@ INSERT IGNORE INTO `vrste_transakcija` (`sifra`,`naziv`,`opis`,`utice_na_knjigov
   ('RAZDUZENJE','Razduženje sredstva','Vraćanje ranije zaduženog sredstva (revers)',0,'NEUTRALNO');
 
 -- =====================================================================================
+-- IZMENA ŠEME: Zaduženje kao vrsta transakcije (za potpunu Istoriju kretanja)
+-- =====================================================================================
+-- Do sada se izdavanje reversa (zaduženje) nije upisivalo u centralni dnevnik
+-- transakcije_sredstva - samo premeštaj i razduženje. Ovim se dodaje vrsta
+-- transakcije ZADUZENJE koju revers_form.php sada koristi, tako da
+-- "Istorija kretanja" prikazuje kompletan životni ciklus kretanja sredstva
+-- (zaduženje -> premeštaj -> razduženje...) na jednom mestu.
+
+INSERT IGNORE INTO `vrste_transakcija` (`sifra`,`naziv`,`opis`,`utice_na_knjigovodstvenu_vrednost`,`smer_uticaja`) VALUES
+  ('ZADUZENJE','Zaduženje sredstva','Izdavanje sredstva zaposlenom putem reversa',0,'NEUTRALNO');
+
+
+-- =====================================================================================
 -- KRAJ SKRIPTE
 -- =====================================================================================
