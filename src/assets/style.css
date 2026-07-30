@@ -189,3 +189,23 @@ textarea { resize: vertical; min-height: 60px; }
 }
 .detalj-labela { flex: 0 0 240px; font-weight: bold; color: #555; }
 .detalj-vrednost { flex: 1; min-width: 200px; }
+
+/* --- Lista sa checkbox-ovima (npr. izbor sredstava za revers) --- */
+.lista-checkboxova {
+    max-height: 320px;
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 8px 12px;
+    background: #fafafa;
+}
+.stavka-checkboxa {
+    display: block;
+    padding: 6px 4px;
+    font-weight: normal;
+    cursor: pointer;
+    border-bottom: 1px solid #eee;
+}
+.stavka-checkboxa:last-child { border-bottom: none; }
+.stavka-checkboxa input { width: auto; margin-right: 8px; }
+.stavka-checkboxa:hover { background: #f0f0f0; }
