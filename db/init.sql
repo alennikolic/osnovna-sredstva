@@ -1056,6 +1056,30 @@ LEFT JOIN `zaposleni` z ON z.id = os.zaposleni_id;
 
 SET FOREIGN_KEY_CHECKS = 1;
 
+
+-- =====================================================================================
+-- IZMENA ŠEME: Razduženje reversa (vraćanje zaduženih sredstava)
+-- =====================================================================================
+-- Dodaje mogućnost da se pojedinačna stavka reversa označi kao vraćena, i da se
+-- status celog reversa automatski prati kroz IZDAT -> DELIMICNO_VRACEN -> VRACEN.
+-- Revers i dalje ostaje "nepromenljiv dokument" u smislu stavki (ne brišu se i
+-- ne dodaju nove stavke posle izdavanja) - samo se svaka postojeća stavka može
+-- označiti kao vraćena.
+
+ALTER TABLE `stavke_reversa`
+  ADD COLUMN `vraceno` TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Da li je ova stavka (sredstvo) vraćena' AFTER `napomena`,
+  ADD COLUMN `datum_vracanja` DATE NULL COMMENT 'Datum kada je sredstvo fizički vraćeno' AFTER `vraceno`,
+  ADD COLUMN `napomena_vracanja` VARCHAR(500) NULL COMMENT 'Napomena uneta prilikom vraćanja (stanje sredstva i sl.)' AFTER `datum_vracanja`,
+  ADD COLUMN `korisnik_vratio_id` INT UNSIGNED NULL COMMENT 'Sistemski korisnik koji je evidentirao vraćanje' AFTER `napomena_vracanja`,
+  ADD CONSTRAINT `fk_stavka_reversa_korisnik_vratio` FOREIGN KEY (`korisnik_vratio_id`)
+      REFERENCES `korisnici` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+ALTER TABLE `reversi`
+  MODIFY COLUMN `status` ENUM('IZDAT','DELIMICNO_VRACEN','VRACEN','PONISTEN') NOT NULL DEFAULT 'IZDAT';
+
+INSERT IGNORE INTO `vrste_transakcija` (`sifra`,`naziv`,`opis`,`utice_na_knjigovodstvenu_vrednost`,`smer_uticaja`) VALUES
+  ('RAZDUZENJE','Razduženje sredstva','Vraćanje ranije zaduženog sredstva (revers)',0,'NEUTRALNO');
+
 -- =====================================================================================
 -- KRAJ SKRIPTE
 -- =====================================================================================

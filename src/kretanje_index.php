@@ -41,12 +41,10 @@ require_once 'header.php';
         <a href="reversi_index.php" class="btn-cancel" style="margin-left:8px;">Pregled reversa</a>
     </div>
 
-    <div class="form-container" style="flex:1; min-width:260px; margin:0; opacity:0.6;">
+    <div class="form-container" style="flex:1; min-width:260px; margin:0;">
         <h3 style="margin-top:0;">Razduženje reversa</h3>
-        <p class="napomena-polje">
-            Evidentiranje vraćanja zaduženog sredstva.
-            <strong>Uskoro</strong> — zahteva malo proširenje šeme (status "vraćeno" na stavkama reversa).
-        </p>
+        <p class="napomena-polje">Vraćanje ranije zaduženih sredstava - otvorite revers i označite koje stavke se vraćaju.</p>
+        <a href="reversi_index.php" class="btn">Otvori reverse</a>
     </div>
 
     <div class="form-container" style="flex:1; min-width:260px; margin:0; opacity:0.6;">
