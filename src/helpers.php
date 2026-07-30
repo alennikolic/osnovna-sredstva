@@ -113,3 +113,143 @@ function nazivTipaSredstva(string $tip): string
     ];
     return $mapa[$tip] ?? $tip;
 }
+
+/**
+ * Učitava SVE lokacije iz baze i vraća ih kao ravnu listu složenu u
+ * hijerarhijski redosled (isti obrazac kao ucitajKlaseHijerarhijski()).
+ * 'nivo' 0 = korenska lokacija (npr. objekat/zgrada), veći nivo = dublje
+ * u hijerarhiji (sprat, prostorija...).
+ */
+function ucitajLokacijeHijerarhijski(PDO $pdo): array
+{
+    $stmt = $pdo->query(
+        "SELECT id, sifra, naziv, adresa, grad, nadredjena_lokacija_id, napomena, aktivna
+         FROM lokacije
+         ORDER BY naziv"
+    );
+    $sve = $stmt->fetchAll();
+
+    $poRoditelju = [];
+    foreach ($sve as $red) {
+        $roditeljId = $red['nadredjena_lokacija_id'] !== null ? (int)$red['nadredjena_lokacija_id'] : 0;
+        $poRoditelju[$roditeljId][] = $red;
+    }
+
+    $rezultat = [];
+    $posecene = [];
+    $dodajDecu = function (int $roditeljId, int $nivo) use (&$dodajDecu, &$poRoditelju, &$rezultat, &$posecene) {
+        if (empty($poRoditelju[$roditeljId])) {
+            return;
+        }
+        foreach ($poRoditelju[$roditeljId] as $red) {
+            $id = (int)$red['id'];
+            if (isset($posecene[$id])) {
+                continue;
+            }
+            $posecene[$id] = true;
+            $red['nivo'] = $nivo;
+            $rezultat[] = $red;
+            $dodajDecu($id, $nivo + 1);
+        }
+    };
+    $dodajDecu(0, 0);
+
+    if (count($rezultat) < count($sve)) {
+        $prikazaniIdovi = array_map(fn($r) => (int)$r['id'], $rezultat);
+        foreach ($sve as $red) {
+            if (!in_array((int)$red['id'], $prikazaniIdovi, true)) {
+                $red['nivo'] = 0;
+                $rezultat[] = $red;
+            }
+        }
+    }
+
+    return $rezultat;
+}
+
+/**
+ * Vraća listu ID-jeva svih potomaka date lokacije - zaštita od kružne
+ * reference pri biranju nadređene lokacije (isti obrazac kao pronadjiPotomkeKlase()).
+ */
+function pronadjiPotomkeLokacije(array $sveLokacije, int $roditeljId): array
+{
+    $potomci = [];
+    foreach ($sveLokacije as $lokacija) {
+        $trenutniRoditelj = $lokacija['nadredjena_lokacija_id'] !== null ? (int)$lokacija['nadredjena_lokacija_id'] : 0;
+        if ($trenutniRoditelj === $roditeljId) {
+            $id = (int)$lokacija['id'];
+            $potomci[] = $id;
+            $potomci = array_merge($potomci, pronadjiPotomkeLokacije($sveLokacije, $id));
+        }
+    }
+    return $potomci;
+}
+
+/**
+ * Učitava SVA mesta troška iz baze u hijerarhijskom redosledu - isti obrazac
+ * kao ucitajLokacijeHijerarhijski() / ucitajKlaseHijerarhijski().
+ */
+function ucitajMestaTroskaHijerarhijski(PDO $pdo): array
+{
+    $stmt = $pdo->query(
+        "SELECT id, sifra, naziv, nadredjeno_mesto_troska_id, napomena, aktivno
+         FROM mesta_troska
+         ORDER BY naziv"
+    );
+    $sve = $stmt->fetchAll();
+
+    $poRoditelju = [];
+    foreach ($sve as $red) {
+        $roditeljId = $red['nadredjeno_mesto_troska_id'] !== null ? (int)$red['nadredjeno_mesto_troska_id'] : 0;
+        $poRoditelju[$roditeljId][] = $red;
+    }
+
+    $rezultat = [];
+    $posecene = [];
+    $dodajDecu = function (int $roditeljId, int $nivo) use (&$dodajDecu, &$poRoditelju, &$rezultat, &$posecene) {
+        if (empty($poRoditelju[$roditeljId])) {
+            return;
+        }
+        foreach ($poRoditelju[$roditeljId] as $red) {
+            $id = (int)$red['id'];
+            if (isset($posecene[$id])) {
+                continue;
+            }
+            $posecene[$id] = true;
+            $red['nivo'] = $nivo;
+            $rezultat[] = $red;
+            $dodajDecu($id, $nivo + 1);
+        }
+    };
+    $dodajDecu(0, 0);
+
+    if (count($rezultat) < count($sve)) {
+        $prikazaniIdovi = array_map(fn($r) => (int)$r['id'], $rezultat);
+        foreach ($sve as $red) {
+            if (!in_array((int)$red['id'], $prikazaniIdovi, true)) {
+                $red['nivo'] = 0;
+                $rezultat[] = $red;
+            }
+        }
+    }
+
+    return $rezultat;
+}
+
+/**
+ * Vraća listu ID-jeva svih potomaka datog mesta troška - zaštita od kružne
+ * reference pri biranju nadređenog mesta troška.
+ */
+function pronadjiPotomkeMesta(array $sveMesta, int $roditeljId): array
+{
+    $potomci = [];
+    foreach ($sveMesta as $mesto) {
+        $trenutniRoditelj = $mesto['nadredjeno_mesto_troska_id'] !== null ? (int)$mesto['nadredjeno_mesto_troska_id'] : 0;
+        if ($trenutniRoditelj === $roditeljId) {
+            $id = (int)$mesto['id'];
+            $potomci[] = $id;
+            $potomci = array_merge($potomci, pronadjiPotomkeMesta($sveMesta, $id));
+        }
+    }
+    return $potomci;
+}
