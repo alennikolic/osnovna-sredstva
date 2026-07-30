@@ -4,8 +4,7 @@
  * ----------------
  * Kreira NACRT reversa (status U_PRIPREMI) - stvarno zaduženje (upis
  * osnovna_sredstva.zaposleni_id i transakcije_sredstva) dešava se tek kada
- * se revers IZDA na revers_pregled.php. Ovo omogućava da se nacrt ispravi
- * ili poništi pre nego što postane pravno obavezujući dokument.
+ * se revers IZDA na revers_pregled.php.
  */
 
 require_once 'auth.php';
@@ -76,9 +75,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $zaposleniLista = $pdo->query("SELECT id, ime, prezime FROM zaposleni WHERE aktivan = 1 ORDER BY prezime, ime")->fetchAll();
 
-// Sredstva dostupna za revers - isto pravilo kao kod popisa: svi statusi koji
-// NISU završni. "trenutno_zaduzen" je informativan prikaz - stvarna promena
-// se dešava tek pri IZDAVANJU ovog nacrta (automatski razdužuje staro).
 $stmt = $pdo->query(
     "SELECT os.id, os.inventarski_broj, os.naziv, k.naziv AS naziv_klase,
             CASE WHEN z.id IS NOT NULL THEN CONCAT(z.ime, ' ', z.prezime) ELSE NULL END AS trenutno_zaduzen
@@ -131,12 +127,14 @@ require_once 'header.php';
 
         <div class="form-group">
             <label>Sredstva na reversu * <span class="napomena-polje">(izaberite jedno ili više)</span></label>
-            <div class="lista-checkboxova">
+            <input type="text" id="filter-sredstava" placeholder="Pretraga po nazivu ili inventarskom broju..."
+                   style="width:100%; margin-bottom:8px; padding:6px;" oninput="filtrirajSredstva()">
+            <div class="lista-checkboxova" id="lista-sredstava">
                 <?php if (empty($sveSredstva)): ?>
                     <p class="napomena-polje">Nema dostupnih sredstava.</p>
                 <?php endif; ?>
                 <?php foreach ($sveSredstva as $sr): ?>
-                    <label class="stavka-checkboxa">
+                    <label class="stavka-checkboxa" data-pretraga="<?= htmlspecialchars(mb_strtolower($sr['inventarski_broj'] . ' ' . $sr['naziv'])) ?>">
                         <input type="checkbox" name="sredstva[]" value="<?= $sr['id'] ?>"
                                <?= in_array($sr['id'], $podaci['sredstva'], true) ? 'checked' : '' ?>>
                         <?= htmlspecialchars($sr['inventarski_broj'] . ' - ' . $sr['naziv']) ?>
@@ -153,5 +151,20 @@ require_once 'header.php';
         <a href="reversi_index.php" class="btn-cancel">Otkaži</a>
     </form>
 </div>
+
+<script>
+// Klijentska pretraga liste sredstava - filtrira po tekstu koji je pripremljen
+// u data-pretraga atributu svakog reda (inventarski broj + naziv, mala slova).
+// Ne dira DOM strukturu, samo sakriva/prikazuje redove - izabrani checkbox-ovi
+// ostaju označeni i kad se filter promeni ili obriše.
+function filtrirajSredstva() {
+    var pojam = document.getElementById('filter-sredstava').value.toLowerCase();
+    var stavke = document.querySelectorAll('#lista-sredstava .stavka-checkboxa');
+    stavke.forEach(function (el) {
+        var tekst = el.getAttribute('data-pretraga') || '';
+        el.style.display = tekst.indexOf(pojam) !== -1 ? '' : 'none';
+    });
+}
+</script>
 
 <?php require_once 'footer.php'; ?>
