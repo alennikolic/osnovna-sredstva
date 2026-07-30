@@ -24,15 +24,19 @@ $korisnik = trenutniKorisnik();
 // 'sekcija' je lista fajlova koji pripadaju istoj celini - npr. i pregled i
 // forma za unos osnovnih sredstava treba da drže istu stavku menija aktivnom.
 //
-// "Evidencija kretanja" objedinjuje sve akcije vezane za kretanje sredstava:
-// premeštaj (lokacija/mesto troška), zaduženje putem reversa, pregled
-// trenutnih zaduženja, i objedinjenu istoriju kretanja.
+// "Šifarnici" objedinjuje sve matične/šifrirane podatke (klase, lokacije,
+// mesta troška, dobavljači...) pod jednu stavku menija - isti princip kao
+// "Evidencija kretanja".
 $stavkeMenija = [
     ['naziv' => 'Osnovna sredstva', 'link' => 'index.php', 'sekcija' => ['index.php', 'os_form.php', 'os_pregled.php']],
-    ['naziv' => 'Klase osnovnih sredstava', 'link' => 'klase_index.php', 'sekcija' => ['klase_index.php', 'klase_form.php']],
+    ['naziv' => 'Šifarnici', 'link' => 'sifarnici_index.php', 'sekcija' => [
+        'sifarnici_index.php',
+        'klase_index.php', 'klase_form.php',
+        'lokacije_index.php', 'lokacije_form.php',
+        'mesta_troska_index.php', 'mesta_troska_form.php',
+        'dobavljaci_index.php', 'dobavljaci_form.php',
+    ]],
     ['naziv' => 'Zaposleni', 'link' => 'zaposleni_index.php', 'sekcija' => ['zaposleni_index.php', 'zaposleni_form.php']],
-    ['naziv' => 'Lokacije', 'link' => 'lokacije_index.php', 'sekcija' => ['lokacije_index.php', 'lokacije_form.php']],
-    ['naziv' => 'Mesta troška', 'link' => 'mesta_troska_index.php', 'sekcija' => ['mesta_troska_index.php', 'mesta_troska_form.php']],
     ['naziv' => 'Popis', 'link' => 'popisi_index.php', 'sekcija' => ['popisi_index.php', 'popisi_form.php', 'popis_pregled.php', 'popis_stavka_form.php']],
     ['naziv' => 'Evidencija kretanja', 'link' => 'kretanje_index.php', 'sekcija' => [
         'kretanje_index.php', 'kretanje_istorija.php', 'zaduzenja_pregled.php',
