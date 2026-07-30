@@ -26,6 +26,15 @@
 -- naloga u ovoj skripti) - kolona lozinka_hash mora sadržati pravi hash generisan
 -- kroz aplikaciju (npr. PHP password_hash()), nikad ručno unet SQL literal.
 --
+-- NAPOMENA O PRIMER PODACIMA: Sekcija 9B (lokacije/mesta troška/zaposleni/osnovna
+-- sredstva) su ILUSTRATIVNI test podaci za lokalni razvoj - obriši taj blok ako
+-- već imaš stvarne podatke.
+--
+-- Status pipeline "U_PRIPREMI -> IZDAT/OBRACUNATO -> ..." koriste reversi (zaduženje),
+-- dokumenti_premestaja (premeštaj) i obracuni_amortizacije - u sva tri slučaja se
+-- prvo kreira nacrt, a stvarna promena na osnovna_sredstva/transakcije_sredstva
+-- dešava se tek pri prelasku iz U_PRIPREMI u sledeći status (aplikativna logika).
+--
 -- Motor: InnoDB | Charset: utf8mb4 (puna podrška za srpski jezik i dijakritike)
 -- Kompatibilno sa: MySQL 5.7+/8.0, MariaDB 10.3+
 -- =====================================================================================
@@ -52,7 +61,9 @@ DROP TABLE IF EXISTS `prodaje_sredstva`;
 DROP TABLE IF EXISTS `rashodovanja_sredstva`;
 DROP TABLE IF EXISTS `poboljsanja_sredstva`;
 DROP TABLE IF EXISTS `revalorizacije_sredstva`;
+DROP TABLE IF EXISTS `stavke_premestaja`;
 DROP TABLE IF EXISTS `premestaji_sredstva`;
+DROP TABLE IF EXISTS `dokumenti_premestaja`;
 DROP TABLE IF EXISTS `transakcije_sredstva`;
 DROP TABLE IF EXISTS `plan_amortizacije`;
 DROP TABLE IF EXISTS `stavke_obracuna_amortizacije`;
@@ -498,9 +509,9 @@ CREATE TABLE `obracuni_amortizacije` (
   `napomena` TEXT NULL,
   `datum_kreiranja` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_obracun_period` (`godina`,`mesec`)
+  KEY `idx_obracun_period` (`godina`,`mesec`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-  COMMENT='Zaglavlje periodičnog obračuna amortizacije za celu kompaniju (jedan red po mesecu/godini)';
+  COMMENT='Zaglavlje periodičnog obračuna amortizacije za celu kompaniju. NAPOMENA: namerno NEMA UNIQUE(godina,mesec) - stornirani obračun (status STORNIRANO) ne sme da blokira ponovni pokušaj za isti period. Aplikacija (obracun_form.php) proverava da ne postoji NEstorniran obračun za period pre kreiranja novog.';
 
 
 CREATE TABLE `stavke_obracuna_amortizacije` (
@@ -582,8 +593,50 @@ CREATE TABLE `transakcije_sredstva` (
   COMMENT='Centralni dnevnik svih događaja u životnom ciklusu sredstva - jedinstvena istorija promena';
 
 
+CREATE TABLE `dokumenti_premestaja` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `broj_dokumenta` VARCHAR(30) NOT NULL COMMENT 'npr. PREM-2026-001 - generiše se automatski',
+  `status` ENUM('U_PRIPREMI','IZDAT','PONISTEN') NOT NULL DEFAULT 'U_PRIPREMI'
+      COMMENT 'U_PRIPREMI = nacrt (ništa još nije promenjeno na sredstvima), IZDAT = izvršeno, PONISTEN = samo dok je U_PRIPREMI',
+  `datum_premestaja` DATE NOT NULL,
+  `nova_lokacija_id` INT UNSIGNED NULL COMMENT 'Izabrana nova lokacija na formi (NULL ako se lokacija ne menja ovim dokumentom)',
+  `novo_mesto_troska_id` INT UNSIGNED NULL COMMENT 'Izabrano novo mesto troška na formi (NULL ako se ne menja ovim dokumentom)',
+  `korisnik_id` INT UNSIGNED NULL COMMENT 'Sistemski korisnik koji je izvršio premeštaj (audit trag)',
+  `napomena` TEXT NULL,
+  `datum_kreiranja` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_dokument_premestaja_broj` (`broj_dokumenta`),
+  KEY `idx_dokument_premestaja_lokacija` (`nova_lokacija_id`),
+  KEY `idx_dokument_premestaja_mesto_troska` (`novo_mesto_troska_id`),
+  KEY `idx_dokument_premestaja_korisnik` (`korisnik_id`),
+  CONSTRAINT `fk_dokument_premestaja_lokacija` FOREIGN KEY (`nova_lokacija_id`)
+      REFERENCES `lokacije` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_dokument_premestaja_mesto_troska` FOREIGN KEY (`novo_mesto_troska_id`)
+      REFERENCES `mesta_troska` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_dokument_premestaja_korisnik` FOREIGN KEY (`korisnik_id`)
+      REFERENCES `korisnici` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  COMMENT='Dokument (zaglavlje) grupnog premeštaja - broj dokumenta za štampu, povezuje više stavki u premestaji_sredstva';
+
+
+CREATE TABLE `stavke_premestaja` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `dokument_premestaja_id` INT UNSIGNED NOT NULL,
+  `sredstvo_id` BIGINT UNSIGNED NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_stavka_premestaja` (`dokument_premestaja_id`,`sredstvo_id`),
+  KEY `idx_stavka_premestaja_sredstvo` (`sredstvo_id`),
+  CONSTRAINT `fk_stavka_premestaja_dokument` FOREIGN KEY (`dokument_premestaja_id`)
+      REFERENCES `dokumenti_premestaja` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_stavka_premestaja_sredstvo` FOREIGN KEY (`sredstvo_id`)
+      REFERENCES `osnovna_sredstva` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  COMMENT='Stavke (planirana sredstva) nacrta dokumenta premeštaja - pre izdavanja. Nakon izdavanja stvarno izvršene promene se beleže u premestaji_sredstva.';
+
+
 CREATE TABLE `premestaji_sredstva` (
   `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `dokument_premestaja_id` INT UNSIGNED NULL COMMENT 'Zaglavlje dokumenta premeštaja (grupni premeštaj) - NULL za retke zapise bez dokumenta',
   `transakcija_id` BIGINT UNSIGNED NOT NULL,
   `sredstvo_id` BIGINT UNSIGNED NOT NULL,
   `datum_premestaja` DATE NOT NULL,
@@ -597,10 +650,13 @@ CREATE TABLE `premestaji_sredstva` (
   `novi_zaposleni_id` INT UNSIGNED NULL,
   `napomena` TEXT NULL,
   PRIMARY KEY (`id`),
+  KEY `idx_premestaj_dokument` (`dokument_premestaja_id`),
   KEY `idx_premestaj_sredstvo` (`sredstvo_id`),
   KEY `idx_premestaj_transakcija` (`transakcija_id`),
   KEY `idx_premestaj_nova_lokacija` (`nova_lokacija_id`),
   KEY `idx_premestaj_novi_zaposleni` (`novi_zaposleni_id`),
+  CONSTRAINT `fk_premestaj_dokument` FOREIGN KEY (`dokument_premestaja_id`)
+      REFERENCES `dokumenti_premestaja` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `fk_premestaj_transakcija` FOREIGN KEY (`transakcija_id`)
       REFERENCES `transakcije_sredstva` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_premestaj_sredstvo` FOREIGN KEY (`sredstvo_id`)
@@ -822,7 +878,8 @@ CREATE TABLE `reversi` (
   `datum_izdavanja` DATE NOT NULL,
   `zaposleni_id` INT UNSIGNED NOT NULL COMMENT 'Zaposleni kome se zadužuju sredstva',
   `korisnik_id` INT UNSIGNED NULL COMMENT 'Sistemski korisnik koji je izdao revers (audit trag)',
-  `status` ENUM('IZDAT','PONISTEN') NOT NULL DEFAULT 'IZDAT',
+  `status` ENUM('U_PRIPREMI','IZDAT','VRACEN','PONISTEN') NOT NULL DEFAULT 'U_PRIPREMI'
+      COMMENT 'U_PRIPREMI = nacrt (zaduženje još nije upisano), IZDAT = stvarno zaduženje, VRACEN = sve stavke vraćene, PONISTEN = samo dok je U_PRIPREMI (izdat revers se ne poništava)',
   `napomena` TEXT NULL,
   `datum_kreiranja` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
@@ -842,13 +899,19 @@ CREATE TABLE `stavke_reversa` (
   `revers_id` INT UNSIGNED NOT NULL,
   `sredstvo_id` BIGINT UNSIGNED NOT NULL,
   `napomena` VARCHAR(500) NULL,
+  `vraceno` TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Da li je ova stavka (sredstvo) vraćena',
+  `datum_vracanja` DATE NULL COMMENT 'Datum kada je sredstvo fizički vraćeno (ili automatski razduženo novim reversom)',
+  `napomena_vracanja` VARCHAR(500) NULL COMMENT 'Napomena o vraćanju (stanje sredstva i sl.)',
+  `korisnik_vratio_id` INT UNSIGNED NULL COMMENT 'Sistemski korisnik koji je evidentirao vraćanje',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_stavka_reversa` (`revers_id`,`sredstvo_id`),
   KEY `idx_stavka_reversa_sredstvo` (`sredstvo_id`),
   CONSTRAINT `fk_stavka_reversa_revers` FOREIGN KEY (`revers_id`)
       REFERENCES `reversi` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_stavka_reversa_sredstvo` FOREIGN KEY (`sredstvo_id`)
-      REFERENCES `osnovna_sredstva` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+      REFERENCES `osnovna_sredstva` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_stavka_reversa_korisnik_vratio` FOREIGN KEY (`korisnik_vratio_id`)
+      REFERENCES `korisnici` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   COMMENT='Stavke reversa - pojedinačna sredstva navedena na jednom reversu';
 
@@ -906,6 +969,8 @@ INSERT INTO `vrste_transakcija` (`sifra`,`naziv`,`opis`,`utice_na_knjigovodstven
   ('NABAVKA','Nabavka sredstva','Evidentiranje novog osnovnog sredstva',1,'POVECANJE'),
   ('AKTIVACIJA','Aktivacija/kapitalizacija','Prelazak sredstva iz pripreme (CIP) u upotrebu',0,'NEUTRALNO'),
   ('PREMESTAJ','Premeštaj','Promena lokacije, mesta troška ili zaduženog lica',0,'NEUTRALNO'),
+  ('ZADUZENJE','Zaduženje sredstva','Izdavanje sredstva zaposlenom putem reversa',0,'NEUTRALNO'),
+  ('RAZDUZENJE','Razduženje sredstva','Vraćanje ranije zaduženog sredstva (revers)',0,'NEUTRALNO'),
   ('REVALORIZACIJA_POVECANJE','Revalorizacija - povećanje','Usklađivanje vrednosti naviše',1,'POVECANJE'),
   ('REVALORIZACIJA_SMANJENJE','Revalorizacija/obezvređenje - smanjenje','Usklađivanje vrednosti naniže / impairment',1,'SMANJENJE'),
   ('POBOLJSANJE','Investiciono poboljšanje','Kapitalno ulaganje koje povećava vrednost sredstva',1,'POVECANJE'),
@@ -1027,6 +1092,153 @@ WHERE r.sifra = 'PREGLED'
 
 
 -- =====================================================================================
+-- SEKCIJA 9B: PRIMER (TEST) PODACI - OPCIONO
+-- =====================================================================================
+-- Realistični primer podaci za lokalni razvoj/testiranje modula (premeštaj, revers,
+-- popis, istorija kretanja, obračun amortizacije). Nisu neophodni za rad aplikacije -
+-- obriši ovaj blok (do SEKCIJE 10) ako već imaš stvarne podatke ili ne želiš test
+-- fixture-e u bazi. FK reference idu preko šifre (subquery) da upisi budu nezavisni
+-- od tačnih AUTO_INCREMENT vrednosti.
+
+-- --- Lokacije (korenske) ---------------------------------------------------------
+INSERT INTO `lokacije` (`sifra`, `naziv`, `adresa`, `grad`, `napomena`) VALUES
+  ('SEDISTE', 'Sedište preduzeća', 'Bulevar kralja Aleksandra 73', 'Beograd', 'Glavni poslovni objekat'),
+  ('POSL-NS', 'Poslovna jedinica Novi Sad', 'Bulevar oslobođenja 10', 'Novi Sad', NULL),
+  ('POSL-NIS', 'Poslovna jedinica Niš', 'Vožda Karađorđa 5', 'Niš', NULL);
+
+-- --- Lokacije (podlokacije unutar sedišta - demonstracija hijerarhije) -----------
+INSERT INTO `lokacije` (`sifra`, `naziv`, `adresa`, `grad`, `nadredjena_lokacija_id`, `napomena`) VALUES
+  ('SEDISTE-1SPRAT', '1. sprat - kancelarije', 'Bulevar kralja Aleksandra 73', 'Beograd',
+      (SELECT id FROM (SELECT id FROM `lokacije` WHERE `sifra` = 'SEDISTE') AS t), NULL),
+  ('SEDISTE-MAGACIN', 'Magacin u prizemlju', 'Bulevar kralja Aleksandra 73', 'Beograd',
+      (SELECT id FROM (SELECT id FROM `lokacije` WHERE `sifra` = 'SEDISTE') AS t), NULL);
+
+-- --- Mesta troška (korenska) ------------------------------------------------------
+INSERT INTO `mesta_troska` (`sifra`, `naziv`, `napomena`) VALUES
+  ('UPRAVA', 'Uprava i administracija', NULL),
+  ('IT', 'IT sektor', NULL),
+  ('PRODAJA', 'Sektor prodaje', NULL),
+  ('LOGISTIKA', 'Sektor logistike i transporta', NULL);
+
+-- --- Mesta troška (podređeno mesto - demonstracija hijerarhije) ------------------
+INSERT INTO `mesta_troska` (`sifra`, `naziv`, `nadredjeno_mesto_troska_id`, `napomena`) VALUES
+  ('RACUNOVODSTVO', 'Računovodstvo', (SELECT id FROM (SELECT id FROM `mesta_troska` WHERE `sifra` = 'UPRAVA') AS t), NULL);
+
+-- --- Zaposleni ---------------------------------------------------------------------
+INSERT INTO `zaposleni`
+  (`sifra`, `ime`, `prezime`, `radno_mesto`, `mesto_troska_id`, `lokacija_id`, `email`, `telefon`, `datum_zaposlenja`)
+VALUES
+  ('Z001', 'Marko', 'Petrović', 'IT administrator',
+      (SELECT id FROM (SELECT id FROM `mesta_troska` WHERE `sifra` = 'IT') AS t),
+      (SELECT id FROM (SELECT id FROM `lokacije` WHERE `sifra` = 'SEDISTE-1SPRAT') AS t),
+      'marko.petrovic@firma.rs', '011/1234-567', '2019-03-01'),
+  ('Z002', 'Jelena', 'Jovanović', 'Knjigovođa',
+      (SELECT id FROM (SELECT id FROM `mesta_troska` WHERE `sifra` = 'RACUNOVODSTVO') AS t),
+      (SELECT id FROM (SELECT id FROM `lokacije` WHERE `sifra` = 'SEDISTE-1SPRAT') AS t),
+      'jelena.jovanovic@firma.rs', '011/1234-568', '2018-09-15'),
+  ('Z003', 'Nikola', 'Ilić', 'Vozač - magacioner',
+      (SELECT id FROM (SELECT id FROM `mesta_troska` WHERE `sifra` = 'LOGISTIKA') AS t),
+      (SELECT id FROM (SELECT id FROM `lokacije` WHERE `sifra` = 'SEDISTE-MAGACIN') AS t),
+      NULL, '064/111-2222', '2021-06-01'),
+  ('Z004', 'Ana', 'Stojanović', 'Prodajni predstavnik',
+      (SELECT id FROM (SELECT id FROM `mesta_troska` WHERE `sifra` = 'PRODAJA') AS t),
+      (SELECT id FROM (SELECT id FROM `lokacije` WHERE `sifra` = 'POSL-NS') AS t),
+      'ana.stojanovic@firma.rs', '021/555-111', '2022-02-01'),
+  ('Z005', 'Miloš', 'Đorđević', 'Menadžer prodaje',
+      (SELECT id FROM (SELECT id FROM `mesta_troska` WHERE `sifra` = 'PRODAJA') AS t),
+      (SELECT id FROM (SELECT id FROM `lokacije` WHERE `sifra` = 'POSL-NIS') AS t),
+      'milos.djordjevic@firma.rs', '018/222-333', '2017-11-10');
+
+-- --- Osnovna sredstva ---------------------------------------------------------------
+INSERT INTO `osnovna_sredstva`
+  (`inventarski_broj`, `naziv`, `opis`, `klasa_id`, `status_id`,
+   `nabavna_vrednost`, `osnovica_za_amortizaciju`, `sadasnja_knjigovodstvena_vrednost`, `da_li_se_amortizuje`,
+   `datum_nabavke`, `datum_stavljanja_u_upotrebu`,
+   `lokacija_id`, `mesto_troska_id`, `zaposleni_id`,
+   `proizvodjac`, `model`, `serijski_broj`, `napomena`)
+VALUES
+  ('OS-0001', 'Poslovna zgrada - sedište', 'Glavni poslovni objekat preduzeća',
+      (SELECT id FROM (SELECT id FROM `klase_osnovnih_sredstava` WHERE `sifra` = 'GRAD') AS t),
+      (SELECT id FROM (SELECT id FROM `statusi_sredstva` WHERE `sifra` = 'U_UPOTREBI') AS t),
+      25000000.00, 25000000.00, 25000000.00, 1,
+      '2015-06-01', '2015-07-01',
+      (SELECT id FROM (SELECT id FROM `lokacije` WHERE `sifra` = 'SEDISTE') AS t),
+      (SELECT id FROM (SELECT id FROM `mesta_troska` WHERE `sifra` = 'UPRAVA') AS t),
+      NULL,
+      NULL, NULL, NULL, NULL),
+
+  ('OS-0002', 'Laptop Dell Latitude 5440', NULL,
+      (SELECT id FROM (SELECT id FROM `klase_osnovnih_sredstava` WHERE `sifra` = 'OPR-IT') AS t),
+      (SELECT id FROM (SELECT id FROM `statusi_sredstva` WHERE `sifra` = 'U_UPOTREBI') AS t),
+      145000.00, 145000.00, 145000.00, 1,
+      '2024-02-10', '2024-02-15',
+      (SELECT id FROM (SELECT id FROM `lokacije` WHERE `sifra` = 'SEDISTE-1SPRAT') AS t),
+      (SELECT id FROM (SELECT id FROM `mesta_troska` WHERE `sifra` = 'IT') AS t),
+      (SELECT id FROM (SELECT id FROM `zaposleni` WHERE `sifra` = 'Z001') AS t),
+      'Dell', 'Latitude 5440', 'DL5440-000123', NULL),
+
+  ('OS-0003', 'Službeno vozilo Škoda Octavia', NULL,
+      (SELECT id FROM (SELECT id FROM `klase_osnovnih_sredstava` WHERE `sifra` = 'OPR-VOZ') AS t),
+      (SELECT id FROM (SELECT id FROM `statusi_sredstva` WHERE `sifra` = 'U_UPOTREBI') AS t),
+      3200000.00, 3200000.00, 3200000.00, 1,
+      '2023-05-20', '2023-05-25',
+      (SELECT id FROM (SELECT id FROM `lokacije` WHERE `sifra` = 'SEDISTE-MAGACIN') AS t),
+      (SELECT id FROM (SELECT id FROM `mesta_troska` WHERE `sifra` = 'LOGISTIKA') AS t),
+      (SELECT id FROM (SELECT id FROM `zaposleni` WHERE `sifra` = 'Z003') AS t),
+      'Škoda', 'Octavia', 'TMBAA0000P0000001', NULL),
+
+  ('OS-0004', 'Kancelarijski sto i stolica', NULL,
+      (SELECT id FROM (SELECT id FROM `klase_osnovnih_sredstava` WHERE `sifra` = 'OPR-NAM') AS t),
+      (SELECT id FROM (SELECT id FROM `statusi_sredstva` WHERE `sifra` = 'U_UPOTREBI') AS t),
+      35000.00, 35000.00, 35000.00, 1,
+      '2022-01-15', '2022-01-20',
+      (SELECT id FROM (SELECT id FROM `lokacije` WHERE `sifra` = 'POSL-NS') AS t),
+      (SELECT id FROM (SELECT id FROM `mesta_troska` WHERE `sifra` = 'PRODAJA') AS t),
+      (SELECT id FROM (SELECT id FROM `zaposleni` WHERE `sifra` = 'Z004') AS t),
+      NULL, NULL, NULL, NULL),
+
+  ('OS-0005', 'Zemljište uz magacin', 'Zemljišna parcela - ne amortizuje se',
+      (SELECT id FROM (SELECT id FROM `klase_osnovnih_sredstava` WHERE `sifra` = 'ZEM') AS t),
+      (SELECT id FROM (SELECT id FROM `statusi_sredstva` WHERE `sifra` = 'U_UPOTREBI') AS t),
+      8000000.00, 8000000.00, 8000000.00, 0,
+      '2015-06-01', '2015-06-01',
+      (SELECT id FROM (SELECT id FROM `lokacije` WHERE `sifra` = 'SEDISTE-MAGACIN') AS t),
+      (SELECT id FROM (SELECT id FROM `mesta_troska` WHERE `sifra` = 'UPRAVA') AS t),
+      NULL,
+      NULL, NULL, NULL, NULL),
+
+  ('OS-0006', 'Printer HP LaserJet Pro', NULL,
+      (SELECT id FROM (SELECT id FROM `klase_osnovnih_sredstava` WHERE `sifra` = 'OPR-IT') AS t),
+      (SELECT id FROM (SELECT id FROM `statusi_sredstva` WHERE `sifra` = 'U_UPOTREBI') AS t),
+      45000.00, 45000.00, 45000.00, 1,
+      '2023-11-01', '2023-11-05',
+      (SELECT id FROM (SELECT id FROM `lokacije` WHERE `sifra` = 'POSL-NIS') AS t),
+      (SELECT id FROM (SELECT id FROM `mesta_troska` WHERE `sifra` = 'PRODAJA') AS t),
+      (SELECT id FROM (SELECT id FROM `zaposleni` WHERE `sifra` = 'Z005') AS t),
+      'HP', 'LaserJet Pro M404dn', NULL, NULL),
+
+  ('OS-0007', 'Viljuškar Toyota', NULL,
+      (SELECT id FROM (SELECT id FROM `klase_osnovnih_sredstava` WHERE `sifra` = 'OPR-VOZ') AS t),
+      (SELECT id FROM (SELECT id FROM `statusi_sredstva` WHERE `sifra` = 'NA_ODRZAVANJU') AS t),
+      1800000.00, 1800000.00, 1800000.00, 1,
+      '2020-09-10', '2020-09-15',
+      (SELECT id FROM (SELECT id FROM `lokacije` WHERE `sifra` = 'SEDISTE-MAGACIN') AS t),
+      (SELECT id FROM (SELECT id FROM `mesta_troska` WHERE `sifra` = 'LOGISTIKA') AS t),
+      NULL,
+      'Toyota', 'Forklift 8FG', NULL, 'Na servisu zbog kvara hidraulike');
+
+-- Primer podešavanja amortizacione grupe/metode na dve klase, da obračun amortizacije
+-- ima šta da obradi odmah (bez ovoga sva sredstva bi bila preskočena - videti
+-- obracun_pregled.php sekciju "Preskočena sredstva"). Vek trajanja je ILUSTRATIVAN -
+-- prilagoditi internom pravilniku/propisu.
+UPDATE `amortizacione_grupe` SET `vek_trajanja_godine` = 4 WHERE `sifra` = 'V';
+UPDATE `klase_osnovnih_sredstava` SET
+    `amortizaciona_grupa_id` = (SELECT id FROM (SELECT id FROM `amortizacione_grupe` WHERE `sifra` = 'V') AS t),
+    `metoda_amortizacije_id` = (SELECT id FROM (SELECT id FROM `metode_amortizacije` WHERE `sifra` = 'LINEARNA') AS t)
+WHERE `sifra` = 'OPR-IT';
+
+
+-- =====================================================================================
 -- SEKCIJA 10: POMOĆNI PREGLEDNI VIEW (opciono)
 -- =====================================================================================
 
@@ -1055,125 +1267,6 @@ LEFT JOIN `zaposleni` z ON z.id = os.zaposleni_id;
 
 
 SET FOREIGN_KEY_CHECKS = 1;
-
-
--- =====================================================================================
--- IZMENA ŠEME: Razduženje reversa (vraćanje zaduženih sredstava)
--- =====================================================================================
--- Dodaje mogućnost da se pojedinačna stavka reversa označi kao vraćena, i da se
--- status celog reversa automatski prati kroz IZDAT -> DELIMICNO_VRACEN -> VRACEN.
--- Revers i dalje ostaje "nepromenljiv dokument" u smislu stavki (ne brišu se i
--- ne dodaju nove stavke posle izdavanja) - samo se svaka postojeća stavka može
--- označiti kao vraćena.
-
-ALTER TABLE `stavke_reversa`
-  ADD COLUMN `vraceno` TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Da li je ova stavka (sredstvo) vraćena' AFTER `napomena`,
-  ADD COLUMN `datum_vracanja` DATE NULL COMMENT 'Datum kada je sredstvo fizički vraćeno' AFTER `vraceno`,
-  ADD COLUMN `napomena_vracanja` VARCHAR(500) NULL COMMENT 'Napomena uneta prilikom vraćanja (stanje sredstva i sl.)' AFTER `datum_vracanja`,
-  ADD COLUMN `korisnik_vratio_id` INT UNSIGNED NULL COMMENT 'Sistemski korisnik koji je evidentirao vraćanje' AFTER `napomena_vracanja`,
-  ADD CONSTRAINT `fk_stavka_reversa_korisnik_vratio` FOREIGN KEY (`korisnik_vratio_id`)
-      REFERENCES `korisnici` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
-
-ALTER TABLE `reversi`
-  MODIFY COLUMN `status` ENUM('IZDAT','DELIMICNO_VRACEN','VRACEN','PONISTEN') NOT NULL DEFAULT 'IZDAT';
-
-INSERT IGNORE INTO `vrste_transakcija` (`sifra`,`naziv`,`opis`,`utice_na_knjigovodstvenu_vrednost`,`smer_uticaja`) VALUES
-  ('RAZDUZENJE','Razduženje sredstva','Vraćanje ranije zaduženog sredstva (revers)',0,'NEUTRALNO');
-
--- =====================================================================================
--- IZMENA ŠEME: Zaduženje kao vrsta transakcije (za potpunu Istoriju kretanja)
--- =====================================================================================
--- Do sada se izdavanje reversa (zaduženje) nije upisivalo u centralni dnevnik
--- transakcije_sredstva - samo premeštaj i razduženje. Ovim se dodaje vrsta
--- transakcije ZADUZENJE koju revers_form.php sada koristi, tako da
--- "Istorija kretanja" prikazuje kompletan životni ciklus kretanja sredstva
--- (zaduženje -> premeštaj -> razduženje...) na jednom mestu.
-
-INSERT IGNORE INTO `vrste_transakcija` (`sifra`,`naziv`,`opis`,`utice_na_knjigovodstvenu_vrednost`,`smer_uticaja`) VALUES
-  ('ZADUZENJE','Zaduženje sredstva','Izdavanje sredstva zaposlenom putem reversa',0,'NEUTRALNO');
-
-
-
-
--- =====================================================================================
--- IZMENA ŠEME: Dokument premeštaja (broj dokumenta + štampa)
--- =====================================================================================
--- Do sada je premeštaj postojao samo kao niz pojedinačnih redova u
--- premestaji_sredstva, bez zajedničkog broja dokumenta. Ovim se dodaje
--- zaglavlje dokumenta (broj, datum, izabrana nova lokacija/mesto troška,
--- ko je izvršio) - isti obrazac kao `reversi` za zaduženje. Grupni premeštaj
--- više sredstava odjednom sada dobija JEDAN broj dokumenta koji povezuje sve
--- pojedinačne stavke u premestaji_sredstva.
-
-CREATE TABLE `dokumenti_premestaja` (
-  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `broj_dokumenta` VARCHAR(30) NOT NULL COMMENT 'npr. PREM-2026-001 - generiše se automatski',
-  `datum_premestaja` DATE NOT NULL,
-  `nova_lokacija_id` INT UNSIGNED NULL COMMENT 'Izabrana nova lokacija na formi (NULL ako se lokacija ne menja ovim dokumentom)',
-  `novo_mesto_troska_id` INT UNSIGNED NULL COMMENT 'Izabrano novo mesto troška na formi (NULL ako se ne menja ovim dokumentom)',
-  `korisnik_id` INT UNSIGNED NULL COMMENT 'Sistemski korisnik koji je izvršio premeštaj (audit trag)',
-  `napomena` TEXT NULL,
-  `datum_kreiranja` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_dokument_premestaja_broj` (`broj_dokumenta`),
-  KEY `idx_dokument_premestaja_lokacija` (`nova_lokacija_id`),
-  KEY `idx_dokument_premestaja_mesto_troska` (`novo_mesto_troska_id`),
-  KEY `idx_dokument_premestaja_korisnik` (`korisnik_id`),
-  CONSTRAINT `fk_dokument_premestaja_lokacija` FOREIGN KEY (`nova_lokacija_id`)
-      REFERENCES `lokacije` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
-  CONSTRAINT `fk_dokument_premestaja_mesto_troska` FOREIGN KEY (`novo_mesto_troska_id`)
-      REFERENCES `mesta_troska` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
-  CONSTRAINT `fk_dokument_premestaja_korisnik` FOREIGN KEY (`korisnik_id`)
-      REFERENCES `korisnici` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-  COMMENT='Dokument (zaglavlje) grupnog premeštaja - broj dokumenta za štampu, povezuje više stavki u premestaji_sredstva';
-
-ALTER TABLE `premestaji_sredstva`
-  ADD COLUMN `dokument_premestaja_id` INT UNSIGNED NULL COMMENT 'Zaglavlje dokumenta premeštaja - NULL za zapise nastale pre uvođenja dokumenta' AFTER `id`,
-  ADD KEY `idx_premestaj_dokument` (`dokument_premestaja_id`),
-  ADD CONSTRAINT `fk_premestaj_dokument` FOREIGN KEY (`dokument_premestaja_id`)
-      REFERENCES `dokumenti_premestaja` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
-
-
-
--- =====================================================================================
--- IZMENA ŠEME: Status pipeline reversa (U_PRIPREMI -> IZDAT -> VRACEN)
--- =====================================================================================
--- Revers se sada kreira kao NACRT (U_PRIPREMI) - stvarno zaduženje (upis u
--- osnovna_sredstva.zaposleni_id i transakcije_sredstva) dešava se tek kada se
--- revers IZDA. Nema više ručnog parcijalnog vraćanja - kad se sredstvo ponovo
--- zaduži DRUGIM reversom, stara stavka se AUTOMATSKI označava vraćenom.
--- Poništavanje je dozvoljeno samo dok je revers U_PRIPREMI (pre izdavanja) -
--- jednom izdat revers je pravno obavezujući dokument i ne može se poništiti.
-
-ALTER TABLE `reversi`
-  MODIFY COLUMN `status` ENUM('U_PRIPREMI','IZDAT','VRACEN','PONISTEN') NOT NULL DEFAULT 'U_PRIPREMI';
-
--- =====================================================================================
--- IZMENA ŠEME: Status pipeline dokumenta premeštaja (U_PRIPREMI -> IZDAT / PONISTEN)
--- =====================================================================================
--- Isti obrazac kao kod reversa: premeštaj se prvo čuva kao NACRT, a stvarna
--- promena lokacije/mesta troška (upis u osnovna_sredstva i transakcije_sredstva)
--- dešava se tek kada se dokument IZDA. Nema statusa "vraćeno" - premeštaj je
--- jednosmerna promena, ne postoji koncept "vraćanja" kao kod reversa.
--- Poništavanje je dozvoljeno samo dok je dokument U_PRIPREMI.
-
-ALTER TABLE `dokumenti_premestaja`
-  ADD COLUMN `status` ENUM('U_PRIPREMI','IZDAT','PONISTEN') NOT NULL DEFAULT 'U_PRIPREMI' AFTER `broj_dokumenta`;
-
-CREATE TABLE `stavke_premestaja` (
-  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `dokument_premestaja_id` INT UNSIGNED NOT NULL,
-  `sredstvo_id` BIGINT UNSIGNED NOT NULL,
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uq_stavka_premestaja` (`dokument_premestaja_id`,`sredstvo_id`),
-  KEY `idx_stavka_premestaja_sredstvo` (`sredstvo_id`),
-  CONSTRAINT `fk_stavka_premestaja_dokument` FOREIGN KEY (`dokument_premestaja_id`)
-      REFERENCES `dokumenti_premestaja` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT `fk_stavka_premestaja_sredstvo` FOREIGN KEY (`sredstvo_id`)
-      REFERENCES `osnovna_sredstva` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-  COMMENT='Stavke (planirana sredstva) nacrta dokumenta premeštaja - pre izdavanja. Nakon izdavanja stvarno izvršene promene se beleže u premestaji_sredstva.';
 
 -- =====================================================================================
 -- KRAJ SKRIPTE
