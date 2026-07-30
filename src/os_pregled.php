@@ -37,15 +37,17 @@ if (!$sredstvo) {
 // u suprotnom slobodan tekst iz odgovorno_lice.
 $zaduzenoLice = $sredstvo['naziv_zaposlenog'] ?? $sredstvo['odgovorno_lice'] ?? null;
 
-// Istorija premeštaja OVOG sredstva - lokacija i mesto troška, staro/novo.
-// Premeštaj ne dira zaduženje, pa se ono ovde ne prikazuje - za to videti
-// istoriju reversa (revers_pregled.php / kretanje_istorija.php).
+// Istorija premeštaja OVOG sredstva - lokacija i mesto troška, staro/novo,
+// sa vezom ka dokumentu (broj_dokumenta) za pregled/štampu. dokument_id je
+// NULL za retke zapise nastale pre uvođenja dokumenta premeštaja.
 $stmt = $pdo->prepare(
     "SELECT
         p.id, p.datum_premestaja, p.napomena,
+        d.id AS dokument_id, d.broj_dokumenta,
         sl.naziv AS stara_lokacija, nl.naziv AS nova_lokacija,
         smt.naziv AS staro_mesto_troska, nmt.naziv AS novo_mesto_troska
      FROM premestaji_sredstva p
+     LEFT JOIN dokumenti_premestaja d ON d.id = p.dokument_premestaja_id
      LEFT JOIN lokacije sl ON sl.id = p.stara_lokacija_id
      LEFT JOIN lokacije nl ON nl.id = p.nova_lokacija_id
      LEFT JOIN mesta_troska smt ON smt.id = p.staro_mesto_troska_id
@@ -174,6 +176,7 @@ require_once 'header.php';
         <thead>
             <tr>
                 <th>Datum</th>
+                <th>Dokument</th>
                 <th>Lokacija (staro → novo)</th>
                 <th>Mesto troška (staro → novo)</th>
                 <th>Napomena</th>
@@ -181,11 +184,18 @@ require_once 'header.php';
         </thead>
         <tbody>
             <?php if (empty($istorijaPremestaja)): ?>
-                <tr><td colspan="4" style="text-align:center;">Nema evidentiranih premeštaja za ovo sredstvo.</td></tr>
+                <tr><td colspan="5" style="text-align:center;">Nema evidentiranih premeštaja za ovo sredstvo.</td></tr>
             <?php else: ?>
                 <?php foreach ($istorijaPremestaja as $p): ?>
                     <tr>
                         <td><?= htmlspecialchars($p['datum_premestaja']) ?></td>
+                        <td>
+                            <?php if ($p['dokument_id']): ?>
+                                <a href="premestaji_pregled.php?id=<?= $p['dokument_id'] ?>"><?= htmlspecialchars($p['broj_dokumenta']) ?></a>
+                            <?php else: ?>
+                                —
+                            <?php endif; ?>
+                        </td>
                         <td><?= htmlspecialchars($p['stara_lokacija'] ?? '—') ?> → <?= htmlspecialchars($p['nova_lokacija'] ?? '—') ?></td>
                         <td><?= htmlspecialchars($p['staro_mesto_troska'] ?? '—') ?> → <?= htmlspecialchars($p['novo_mesto_troska'] ?? '—') ?></td>
                         <td><?= htmlspecialchars($p['napomena'] ?? '') ?></td>
