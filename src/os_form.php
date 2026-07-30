@@ -14,6 +14,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 $izmena = !empty($id);
 
+// Lokacija, mesto troška i zaduženje se NAMERNO ne učitavaju u editabilni
+// $podaci niz kod izmene - ta polja su zaključana (read-only) i menjaju se
+// isključivo kroz Premeštaj (lokacija/mesto troška) i Revers (zaduženje), da
+// bi istorija kretanja ostala pouzdan izvor istine. Ovde ih učitavamo samo
+// za PRIKAZ, odmah, nezavisno od GET/POST grane ispod.
+$trenutnoStanjeZaduzenja = null;
+if ($izmena) {
+    $stmt = $pdo->prepare(
+        "SELECT
+            os.lokacija_id, os.mesto_troska_id, os.odgovorno_lice, os.zaposleni_id,
+            l.naziv AS naziv_lokacije,
+            mt.naziv AS naziv_mesta_troska,
+            CASE WHEN z.id IS NOT NULL THEN CONCAT(z.ime, ' ', z.prezime) ELSE NULL END AS naziv_zaposlenog
+         FROM osnovna_sredstva os
+         LEFT JOIN lokacije l ON l.id = os.lokacija_id
+         LEFT JOIN mesta_troska mt ON mt.id = os.mesto_troska_id
+         LEFT JOIN zaposleni z ON z.id = os.zaposleni_id
+         WHERE os.id = :id"
+    );
+    $stmt->execute([':id' => $id]);
+    $trenutnoStanjeZaduzenja = $stmt->fetch();
+
+    if (!$trenutnoStanjeZaduzenja) {
+        header("Location: index.php");
+        exit;
+    }
+}
+
 // Podrazumevane vrednosti forme
 $podaci = [
     'inventarski_broj' => '',
@@ -43,14 +71,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $podaci['nabavna_vrednost'] = $_POST['nabavna_vrednost'] ?? '0';
     $podaci['datum_nabavke'] = trim($_POST['datum_nabavke'] ?? '');
     $podaci['datum_stavljanja_u_upotrebu'] = trim($_POST['datum_stavljanja_u_upotrebu'] ?? '');
-    $podaci['lokacija_id'] = $_POST['lokacija_id'] ?? '';
-    $podaci['mesto_troska_id'] = $_POST['mesto_troska_id'] ?? '';
-    $podaci['odgovorno_lice'] = trim($_POST['odgovorno_lice'] ?? '');
-    $podaci['zaposleni_id'] = $_POST['zaposleni_id'] ?? '';
     $podaci['proizvodjac'] = trim($_POST['proizvodjac'] ?? '');
     $podaci['model'] = trim($_POST['model'] ?? '');
     $podaci['serijski_broj'] = trim($_POST['serijski_broj'] ?? '');
     $podaci['napomena'] = trim($_POST['napomena'] ?? '');
+
+    // Lokacija/mesto troška/zaduženje se čitaju iz POST-a SAMO pri kreiranju
+    // novog sredstva - kod izmene ta polja uopšte nisu deo forme.
+    if (!$izmena) {
+        $podaci['lokacija_id'] = $_POST['lokacija_id'] ?? '';
+        $podaci['mesto_troska_id'] = $_POST['mesto_troska_id'] ?? '';
+        $podaci['odgovorno_lice'] = trim($_POST['odgovorno_lice'] ?? '');
+        $podaci['zaposleni_id'] = $_POST['zaposleni_id'] ?? '';
+    }
 
     if (!empty($podaci['inventarski_broj']) && !empty($podaci['naziv']) && !empty($podaci['klasa_id']) && !empty($podaci['status_id'])) {
         try {
@@ -63,10 +96,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':nabavna'          => $podaci['nabavna_vrednost'],
                 ':datum_nabavke'    => $podaci['datum_nabavke'],
                 ':datum_upotreba'   => $podaci['datum_stavljanja_u_upotrebu'] !== '' ? $podaci['datum_stavljanja_u_upotrebu'] : null,
-                ':lokacija'         => $podaci['lokacija_id'] !== '' ? (int)$podaci['lokacija_id'] : null,
-                ':mesto_troska'     => $podaci['mesto_troska_id'] !== '' ? (int)$podaci['mesto_troska_id'] : null,
-                ':lice'             => $podaci['odgovorno_lice'] !== '' ? $podaci['odgovorno_lice'] : null,
-                ':zaposleni'        => $podaci['zaposleni_id'] !== '' ? (int)$podaci['zaposleni_id'] : null,
                 ':proizvodjac'      => $podaci['proizvodjac'] !== '' ? $podaci['proizvodjac'] : null,
                 ':model'            => $podaci['model'] !== '' ? $podaci['model'] : null,
                 ':serijski'         => $podaci['serijski_broj'] !== '' ? $podaci['serijski_broj'] : null,
@@ -74,10 +103,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ];
 
             if ($izmena) {
-                // NAMERNO se ovde NE dira osnovica_za_amortizaciju, akumulirana_amortizacija
-                // ni sadasnja_knjigovodstvena_vrednost - to su knjigovodstvene vrednosti koje
-                // treba da menja isključivo budući modul za obračun amortizacije/revalorizaciju,
-                // ne obična izmena matičnih podataka sredstva.
+                // NAMERNO se ovde NE diraju lokacija_id, mesto_troska_id, odgovorno_lice,
+                // zaposleni_id (menjaju se isključivo kroz Premeštaj/Revers), kao ni
+                // osnovica_za_amortizaciju, akumulirana_amortizacija ni
+                // sadasnja_knjigovodstvena_vrednost (menja ih budući modul amortizacije).
                 $sql = "UPDATE osnovna_sredstva SET
                             inventarski_broj = :inv,
                             naziv = :naziv,
@@ -87,10 +116,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             nabavna_vrednost = :nabavna,
                             datum_nabavke = :datum_nabavke,
                             datum_stavljanja_u_upotrebu = :datum_upotreba,
-                            lokacija_id = :lokacija,
-                            mesto_troska_id = :mesto_troska,
-                            odgovorno_lice = :lice,
-                            zaposleni_id = :zaposleni,
                             proizvodjac = :proizvodjac,
                             model = :model,
                             serijski_broj = :serijski,
@@ -100,7 +125,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 // Za novo sredstvo: nabavna_vrednost = osnovica_za_amortizaciju =
                 // sadasnja_knjigovodstvena_vrednost (nema još obračunate amortizacije).
-                $parametri[':osnovica'] = $podaci['nabavna_vrednost'];
+                $parametri[':lokacija']       = $podaci['lokacija_id'] !== '' ? (int)$podaci['lokacija_id'] : null;
+                $parametri[':mesto_troska']   = $podaci['mesto_troska_id'] !== '' ? (int)$podaci['mesto_troska_id'] : null;
+                $parametri[':lice']           = $podaci['odgovorno_lice'] !== '' ? $podaci['odgovorno_lice'] : null;
+                $parametri[':zaposleni']      = $podaci['zaposleni_id'] !== '' ? (int)$podaci['zaposleni_id'] : null;
+                $parametri[':osnovica']       = $podaci['nabavna_vrednost'];
                 $parametri[':knjig_vrednost'] = $podaci['nabavna_vrednost'];
 
                 $sql = "INSERT INTO osnovna_sredstva
@@ -132,6 +161,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 } elseif ($izmena) {
     // Obični GET zahtev za izmenu (klik na "Izmeni") - učitaj postojeće podatke
+    // (lokacija/mesto troška/zaduženje su već učitani gore u $trenutnoStanjeZaduzenja)
     $stmt = $pdo->prepare("SELECT * FROM osnovna_sredstva WHERE id = :id");
     $stmt->execute([':id' => $id]);
     $postojece = $stmt->fetch();
@@ -149,17 +179,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $podaci['nabavna_vrednost'] = $postojece['nabavna_vrednost'];
     $podaci['datum_nabavke'] = $postojece['datum_nabavke'];
     $podaci['datum_stavljanja_u_upotrebu'] = $postojece['datum_stavljanja_u_upotrebu'] ?? '';
-    $podaci['lokacija_id'] = $postojece['lokacija_id'] ?? '';
-    $podaci['mesto_troska_id'] = $postojece['mesto_troska_id'] ?? '';
-    $podaci['odgovorno_lice'] = $postojece['odgovorno_lice'] ?? '';
-    $podaci['zaposleni_id'] = $postojece['zaposleni_id'] ?? '';
     $podaci['proizvodjac'] = $postojece['proizvodjac'] ?? '';
     $podaci['model'] = $postojece['model'] ?? '';
     $podaci['serijski_broj'] = $postojece['serijski_broj'] ?? '';
     $podaci['napomena'] = $postojece['napomena'] ?? '';
 }
 
-// Učitavanje šifarnika za padajuće menije
+// Učitavanje šifarnika za padajuće menije - lokacija/mesto troška/zaposleni
+// su potrebni samo pri kreiranju novog sredstva (kod izmene su ta polja
+// read-only), ali ne škodi učitati ih uvek - upiti su jeftini.
 $klase = $pdo->query("SELECT id, naziv FROM klase_osnovnih_sredstava WHERE aktivna = 1 ORDER BY naziv")->fetchAll();
 $statusi = $pdo->query("SELECT id, naziv FROM statusi_sredstva ORDER BY redosled_prikaza")->fetchAll();
 $lokacije = $pdo->query("SELECT id, naziv FROM lokacije WHERE aktivna = 1 ORDER BY naziv")->fetchAll();
@@ -251,45 +279,67 @@ require_once 'header.php';
             </div>
         </div>
 
-        <div class="red-2">
-            <div class="form-group">
-                <label>Lokacija</label>
-                <select name="lokacija_id">
-                    <option value="">-- Nije dodeljeno --</option>
-                    <?php foreach ($lokacije as $l): ?>
-                        <option value="<?= $l['id'] ?>" <?= (string)$podaci['lokacija_id'] === (string)$l['id'] ? 'selected' : '' ?>><?= htmlspecialchars($l['naziv']) ?></option>
-                    <?php endforeach; ?>
-                </select>
+        <?php if (!$izmena): ?>
+            <div class="red-2">
+                <div class="form-group">
+                    <label>Lokacija</label>
+                    <select name="lokacija_id">
+                        <option value="">-- Nije dodeljeno --</option>
+                        <?php foreach ($lokacije as $l): ?>
+                            <option value="<?= $l['id'] ?>" <?= (string)$podaci['lokacija_id'] === (string)$l['id'] ? 'selected' : '' ?>><?= htmlspecialchars($l['naziv']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Mesto troška</label>
+                    <select name="mesto_troska_id">
+                        <option value="">-- Nije dodeljeno --</option>
+                        <?php foreach ($mestaTroska as $mt): ?>
+                            <option value="<?= $mt['id'] ?>" <?= (string)$podaci['mesto_troska_id'] === (string)$mt['id'] ? 'selected' : '' ?>><?= htmlspecialchars($mt['naziv']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
             </div>
-            <div class="form-group">
-                <label>Mesto troška</label>
-                <select name="mesto_troska_id">
-                    <option value="">-- Nije dodeljeno --</option>
-                    <?php foreach ($mestaTroska as $mt): ?>
-                        <option value="<?= $mt['id'] ?>" <?= (string)$podaci['mesto_troska_id'] === (string)$mt['id'] ? 'selected' : '' ?>><?= htmlspecialchars($mt['naziv']) ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
-        </div>
 
-        <div class="naslov-podsekcije">Zaduženje <span class="napomena-polje">(opciono - izaberite zaposlenog ILI upišite ime, ne mora oboje)</span></div>
-        <div class="red-2">
-            <div class="form-group">
-                <label>Zaduženi zaposleni</label>
-                <select name="zaposleni_id">
-                    <option value="">-- Nije zaduženo --</option>
-                    <?php foreach ($zaposleniLista as $z): ?>
-                        <option value="<?= $z['id'] ?>" <?= (string)$podaci['zaposleni_id'] === (string)$z['id'] ? 'selected' : '' ?>>
-                            <?= htmlspecialchars($z['prezime'] . ' ' . $z['ime']) ?>
-                        </option>
-                    <?php endforeach; ?>
-                </select>
+            <div class="naslov-podsekcije">Zaduženje <span class="napomena-polje">(opciono - izaberite zaposlenog ILI upišite ime, ne mora oboje)</span></div>
+            <div class="red-2">
+                <div class="form-group">
+                    <label>Zaduženi zaposleni</label>
+                    <select name="zaposleni_id">
+                        <option value="">-- Nije zaduženo --</option>
+                        <?php foreach ($zaposleniLista as $z): ?>
+                            <option value="<?= $z['id'] ?>" <?= (string)$podaci['zaposleni_id'] === (string)$z['id'] ? 'selected' : '' ?>>
+                                <?= htmlspecialchars($z['prezime'] . ' ' . $z['ime']) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Odgovorno lice <span class="napomena-polje">(slobodan tekst - za lica van evidencije zaposlenih)</span></label>
+                    <input type="text" name="odgovorno_lice" value="<?= htmlspecialchars($podaci['odgovorno_lice']) ?>">
+                </div>
             </div>
-            <div class="form-group">
-                <label>Odgovorno lice <span class="napomena-polje">(slobodan tekst - za lica van evidencije zaposlenih)</span></label>
-                <input type="text" name="odgovorno_lice" value="<?= htmlspecialchars($podaci['odgovorno_lice']) ?>">
+        <?php else: ?>
+            <div class="naslov-podsekcije">Lokacija, mesto troška i zaduženje</div>
+            <div class="detalj-red">
+                <span class="detalj-labela">Lokacija</span>
+                <span class="detalj-vrednost"><?= htmlspecialchars($trenutnoStanjeZaduzenja['naziv_lokacije'] ?? '—') ?></span>
             </div>
-        </div>
+            <div class="detalj-red">
+                <span class="detalj-labela">Mesto troška</span>
+                <span class="detalj-vrednost"><?= htmlspecialchars($trenutnoStanjeZaduzenja['naziv_mesta_troska'] ?? '—') ?></span>
+            </div>
+            <div class="detalj-red">
+                <span class="detalj-labela">Zaduženo lice</span>
+                <span class="detalj-vrednost"><?= htmlspecialchars($trenutnoStanjeZaduzenja['naziv_zaposlenog'] ?? $trenutnoStanjeZaduzenja['odgovorno_lice'] ?? '—') ?></span>
+            </div>
+            <p class="napomena-polje" style="margin-top: 8px; margin-bottom: 20px;">
+                Za promenu lokacije ili mesta troška koristite
+                <a href="premestaj_form.php?sredstvo_id=<?= $id ?>">Premeštaj</a>,
+                a za promenu zaduženja
+                <a href="revers_form.php">Revers</a>.
+            </p>
+        <?php endif; ?>
 
         <div class="form-group">
             <label>Napomena</label>

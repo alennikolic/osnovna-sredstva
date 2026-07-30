@@ -37,23 +37,19 @@ if (!$sredstvo) {
 // u suprotnom slobodan tekst iz odgovorno_lice.
 $zaduzenoLice = $sredstvo['naziv_zaposlenog'] ?? $sredstvo['odgovorno_lice'] ?? null;
 
-// Istorija premeštaja OVOG sredstva - prikaz starog i novog stanja po svakom
-// premeštaju, najnoviji prvi (isti upit kao u premestaji_index.php, filtriran
-// po sredstvu).
+// Istorija premeštaja OVOG sredstva - lokacija i mesto troška, staro/novo.
+// Premeštaj ne dira zaduženje, pa se ono ovde ne prikazuje - za to videti
+// istoriju reversa (revers_pregled.php / kretanje_istorija.php).
 $stmt = $pdo->prepare(
     "SELECT
         p.id, p.datum_premestaja, p.napomena,
         sl.naziv AS stara_lokacija, nl.naziv AS nova_lokacija,
-        smt.naziv AS staro_mesto_troska, nmt.naziv AS novo_mesto_troska,
-        CASE WHEN sz.id IS NOT NULL THEN CONCAT(sz.ime, ' ', sz.prezime) ELSE p.staro_odgovorno_lice END AS staro_zaduzeno_lice,
-        CASE WHEN nz.id IS NOT NULL THEN CONCAT(nz.ime, ' ', nz.prezime) ELSE p.novo_odgovorno_lice END AS novo_zaduzeno_lice
+        smt.naziv AS staro_mesto_troska, nmt.naziv AS novo_mesto_troska
      FROM premestaji_sredstva p
      LEFT JOIN lokacije sl ON sl.id = p.stara_lokacija_id
      LEFT JOIN lokacije nl ON nl.id = p.nova_lokacija_id
      LEFT JOIN mesta_troska smt ON smt.id = p.staro_mesto_troska_id
      LEFT JOIN mesta_troska nmt ON nmt.id = p.novo_mesto_troska_id
-     LEFT JOIN zaposleni sz ON sz.id = p.stari_zaposleni_id
-     LEFT JOIN zaposleni nz ON nz.id = p.novi_zaposleni_id
      WHERE p.sredstvo_id = :id
      ORDER BY p.datum_premestaja DESC, p.id DESC"
 );
@@ -180,20 +176,18 @@ require_once 'header.php';
                 <th>Datum</th>
                 <th>Lokacija (staro → novo)</th>
                 <th>Mesto troška (staro → novo)</th>
-                <th>Zaduženo lice (staro → novo)</th>
                 <th>Napomena</th>
             </tr>
         </thead>
         <tbody>
             <?php if (empty($istorijaPremestaja)): ?>
-                <tr><td colspan="5" style="text-align:center;">Nema evidentiranih premeštaja za ovo sredstvo.</td></tr>
+                <tr><td colspan="4" style="text-align:center;">Nema evidentiranih premeštaja za ovo sredstvo.</td></tr>
             <?php else: ?>
                 <?php foreach ($istorijaPremestaja as $p): ?>
                     <tr>
                         <td><?= htmlspecialchars($p['datum_premestaja']) ?></td>
                         <td><?= htmlspecialchars($p['stara_lokacija'] ?? '—') ?> → <?= htmlspecialchars($p['nova_lokacija'] ?? '—') ?></td>
                         <td><?= htmlspecialchars($p['staro_mesto_troska'] ?? '—') ?> → <?= htmlspecialchars($p['novo_mesto_troska'] ?? '—') ?></td>
-                        <td><?= htmlspecialchars($p['staro_zaduzeno_lice'] ?? '—') ?> → <?= htmlspecialchars($p['novo_zaduzeno_lice'] ?? '—') ?></td>
                         <td><?= htmlspecialchars($p['napomena'] ?? '') ?></td>
                     </tr>
                 <?php endforeach; ?>

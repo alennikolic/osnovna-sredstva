@@ -33,6 +33,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $brojReversa = sledeciBrojReversa($pdo);
             $trenutni = trenutniKorisnik();
 
+            $vrstaZaduzenje = $pdo->query(
+                "SELECT id FROM vrste_transakcija WHERE sifra = 'ZADUZENJE'"
+            )->fetch();
+            if (!$vrstaZaduzenje) {
+                throw new \RuntimeException('Vrsta transakcije ZADUZENJE ne postoji u bazi - proverite da li je izmena šeme za Istoriju kretanja primenjena (dodatak na kraju init.sql).');
+            }
+
             $stmt = $pdo->prepare(
                 "INSERT INTO reversi (broj_reversa, datum_izdavanja, zaposleni_id, korisnik_id, napomena, status)
                  VALUES (:broj, :datum, :zaposleni, :korisnik, :napomena, 'IZDAT')"
@@ -55,10 +62,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmtZaduzenje = $pdo->prepare(
                 "UPDATE osnovna_sredstva SET zaposleni_id = :zaposleni WHERE id = :id"
             );
+            // I upis u centralni dnevnik transakcija - da bi "Istorija kretanja"
+            // prikazivala i zaduženje, ne samo premeštaj i razduženje.
+            $stmtTransakcija = $pdo->prepare(
+                "INSERT INTO transakcije_sredstva
+                    (sredstvo_id, vrsta_transakcije_id, datum_transakcije, broj_dokumenta, opis, korisnik_id, napomena)
+                 VALUES
+                    (:sredstvo, :vrsta, :datum, :broj_dok, :opis, :korisnik, :napomena)"
+            );
 
             foreach ($podaci['sredstva'] as $sredstvoId) {
                 $stmtStavka->execute([':revers' => $reversId, ':sredstvo' => $sredstvoId]);
                 $stmtZaduzenje->execute([':zaposleni' => (int)$podaci['zaposleni_id'], ':id' => $sredstvoId]);
+                $stmtTransakcija->execute([
+                    ':sredstvo' => $sredstvoId,
+                    ':vrsta'    => $vrstaZaduzenje['id'],
+                    ':datum'    => $podaci['datum_izdavanja'],
+                    ':broj_dok' => $brojReversa,
+                    ':opis'     => 'Zaduženje po reversu ' . $brojReversa,
+                    ':korisnik' => $trenutni['id'] ?? null,
+                    ':napomena' => $podaci['napomena'] !== '' ? $podaci['napomena'] : null,
+                ]);
             }
 
             $pdo->commit();
@@ -72,6 +96,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $poruka = "Greška pri upisu u bazu: " . $e->getMessage();
             }
+        } catch (\RuntimeException $e) {
+            $pdo->rollBack();
+            $poruka = $e->getMessage();
         }
     }
 }

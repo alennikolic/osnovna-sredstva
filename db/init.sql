@@ -1081,5 +1081,150 @@ INSERT IGNORE INTO `vrste_transakcija` (`sifra`,`naziv`,`opis`,`utice_na_knjigov
   ('RAZDUZENJE','Razduženje sredstva','Vraćanje ranije zaduženog sredstva (revers)',0,'NEUTRALNO');
 
 -- =====================================================================================
+-- IZMENA ŠEME: Zaduženje kao vrsta transakcije (za potpunu Istoriju kretanja)
+-- =====================================================================================
+-- Do sada se izdavanje reversa (zaduženje) nije upisivalo u centralni dnevnik
+-- transakcije_sredstva - samo premeštaj i razduženje. Ovim se dodaje vrsta
+-- transakcije ZADUZENJE koju revers_form.php sada koristi, tako da
+-- "Istorija kretanja" prikazuje kompletan životni ciklus kretanja sredstva
+-- (zaduženje -> premeštaj -> razduženje...) na jednom mestu.
+
+INSERT IGNORE INTO `vrste_transakcija` (`sifra`,`naziv`,`opis`,`utice_na_knjigovodstvenu_vrednost`,`smer_uticaja`) VALUES
+  ('ZADUZENJE','Zaduženje sredstva','Izdavanje sredstva zaposlenom putem reversa',0,'NEUTRALNO');
+
+-- =====================================================================================
+-- PRIMER (SEED) PODACI: Lokacije, mesta troška, zaposleni, osnovna sredstva
+-- =====================================================================================
+-- Realistični test podaci za lokalni razvoj i testiranje modula (premeštaj, revers,
+-- popis, istorija kretanja). Isti obrazac kao ostatak fajla - FK reference se rade
+-- preko šifre (subquery) da bi upisi bili nezavisni od tačnih AUTO_INCREMENT vrednosti.
+
+-- --- Lokacije (korenske) ---------------------------------------------------------
+INSERT INTO `lokacije` (`sifra`, `naziv`, `adresa`, `grad`, `napomena`) VALUES
+  ('SEDISTE', 'Sedište preduzeća', 'Bulevar kralja Aleksandra 73', 'Beograd', 'Glavni poslovni objekat'),
+  ('POSL-NS', 'Poslovna jedinica Novi Sad', 'Bulevar oslobođenja 10', 'Novi Sad', NULL),
+  ('POSL-NIS', 'Poslovna jedinica Niš', 'Vožda Karađorđa 5', 'Niš', NULL);
+
+-- --- Lokacije (podlokacije unutar sedišta - demonstracija hijerarhije) -----------
+INSERT INTO `lokacije` (`sifra`, `naziv`, `adresa`, `grad`, `nadredjena_lokacija_id`, `napomena`) VALUES
+  ('SEDISTE-1SPRAT', '1. sprat - kancelarije', 'Bulevar kralja Aleksandra 73', 'Beograd',
+      (SELECT id FROM (SELECT id FROM `lokacije` WHERE `sifra` = 'SEDISTE') AS t), NULL),
+  ('SEDISTE-MAGACIN', 'Magacin u prizemlju', 'Bulevar kralja Aleksandra 73', 'Beograd',
+      (SELECT id FROM (SELECT id FROM `lokacije` WHERE `sifra` = 'SEDISTE') AS t), NULL);
+
+-- --- Mesta troška (korenska) ------------------------------------------------------
+INSERT INTO `mesta_troska` (`sifra`, `naziv`, `napomena`) VALUES
+  ('UPRAVA', 'Uprava i administracija', NULL),
+  ('IT', 'IT sektor', NULL),
+  ('PRODAJA', 'Sektor prodaje', NULL),
+  ('LOGISTIKA', 'Sektor logistike i transporta', NULL);
+
+-- --- Mesta troška (podređeno mesto - demonstracija hijerarhije) ------------------
+INSERT INTO `mesta_troska` (`sifra`, `naziv`, `nadredjeno_mesto_troska_id`, `napomena`) VALUES
+  ('RACUNOVODSTVO', 'Računovodstvo', (SELECT id FROM (SELECT id FROM `mesta_troska` WHERE `sifra` = 'UPRAVA') AS t), NULL);
+
+-- --- Zaposleni ---------------------------------------------------------------------
+INSERT INTO `zaposleni`
+  (`sifra`, `ime`, `prezime`, `radno_mesto`, `mesto_troska_id`, `lokacija_id`, `email`, `telefon`, `datum_zaposlenja`)
+VALUES
+  ('Z001', 'Marko', 'Petrović', 'IT administrator',
+      (SELECT id FROM (SELECT id FROM `mesta_troska` WHERE `sifra` = 'IT') AS t),
+      (SELECT id FROM (SELECT id FROM `lokacije` WHERE `sifra` = 'SEDISTE-1SPRAT') AS t),
+      'marko.petrovic@firma.rs', '011/1234-567', '2019-03-01'),
+  ('Z002', 'Jelena', 'Jovanović', 'Knjigovođa',
+      (SELECT id FROM (SELECT id FROM `mesta_troska` WHERE `sifra` = 'RACUNOVODSTVO') AS t),
+      (SELECT id FROM (SELECT id FROM `lokacije` WHERE `sifra` = 'SEDISTE-1SPRAT') AS t),
+      'jelena.jovanovic@firma.rs', '011/1234-568', '2018-09-15'),
+  ('Z003', 'Nikola', 'Ilić', 'Vozač - magacioner',
+      (SELECT id FROM (SELECT id FROM `mesta_troska` WHERE `sifra` = 'LOGISTIKA') AS t),
+      (SELECT id FROM (SELECT id FROM `lokacije` WHERE `sifra` = 'SEDISTE-MAGACIN') AS t),
+      NULL, '064/111-2222', '2021-06-01'),
+  ('Z004', 'Ana', 'Stojanović', 'Prodajni predstavnik',
+      (SELECT id FROM (SELECT id FROM `mesta_troska` WHERE `sifra` = 'PRODAJA') AS t),
+      (SELECT id FROM (SELECT id FROM `lokacije` WHERE `sifra` = 'POSL-NS') AS t),
+      'ana.stojanovic@firma.rs', '021/555-111', '2022-02-01'),
+  ('Z005', 'Miloš', 'Đorđević', 'Menadžer prodaje',
+      (SELECT id FROM (SELECT id FROM `mesta_troska` WHERE `sifra` = 'PRODAJA') AS t),
+      (SELECT id FROM (SELECT id FROM `lokacije` WHERE `sifra` = 'POSL-NIS') AS t),
+      'milos.djordjevic@firma.rs', '018/222-333', '2017-11-10');
+
+-- --- Osnovna sredstva ---------------------------------------------------------------
+INSERT INTO `osnovna_sredstva`
+  (`inventarski_broj`, `naziv`, `opis`, `klasa_id`, `status_id`,
+   `nabavna_vrednost`, `osnovica_za_amortizaciju`, `sadasnja_knjigovodstvena_vrednost`, `da_li_se_amortizuje`,
+   `datum_nabavke`, `datum_stavljanja_u_upotrebu`,
+   `lokacija_id`, `mesto_troska_id`, `zaposleni_id`,
+   `proizvodjac`, `model`, `serijski_broj`, `napomena`)
+VALUES
+  ('OS-0001', 'Poslovna zgrada - sedište', 'Glavni poslovni objekat preduzeća',
+      (SELECT id FROM (SELECT id FROM `klase_osnovnih_sredstava` WHERE `sifra` = 'GRAD') AS t),
+      (SELECT id FROM (SELECT id FROM `statusi_sredstva` WHERE `sifra` = 'U_UPOTREBI') AS t),
+      25000000.00, 25000000.00, 25000000.00, 1,
+      '2015-06-01', '2015-07-01',
+      (SELECT id FROM (SELECT id FROM `lokacije` WHERE `sifra` = 'SEDISTE') AS t),
+      (SELECT id FROM (SELECT id FROM `mesta_troska` WHERE `sifra` = 'UPRAVA') AS t),
+      NULL,
+      NULL, NULL, NULL, NULL),
+
+  ('OS-0002', 'Laptop Dell Latitude 5440', NULL,
+      (SELECT id FROM (SELECT id FROM `klase_osnovnih_sredstava` WHERE `sifra` = 'OPR-IT') AS t),
+      (SELECT id FROM (SELECT id FROM `statusi_sredstva` WHERE `sifra` = 'U_UPOTREBI') AS t),
+      145000.00, 145000.00, 145000.00, 1,
+      '2024-02-10', '2024-02-15',
+      (SELECT id FROM (SELECT id FROM `lokacije` WHERE `sifra` = 'SEDISTE-1SPRAT') AS t),
+      (SELECT id FROM (SELECT id FROM `mesta_troska` WHERE `sifra` = 'IT') AS t),
+      (SELECT id FROM (SELECT id FROM `zaposleni` WHERE `sifra` = 'Z001') AS t),
+      'Dell', 'Latitude 5440', 'DL5440-000123', NULL),
+
+  ('OS-0003', 'Službeno vozilo Škoda Octavia', NULL,
+      (SELECT id FROM (SELECT id FROM `klase_osnovnih_sredstava` WHERE `sifra` = 'OPR-VOZ') AS t),
+      (SELECT id FROM (SELECT id FROM `statusi_sredstva` WHERE `sifra` = 'U_UPOTREBI') AS t),
+      3200000.00, 3200000.00, 3200000.00, 1,
+      '2023-05-20', '2023-05-25',
+      (SELECT id FROM (SELECT id FROM `lokacije` WHERE `sifra` = 'SEDISTE-MAGACIN') AS t),
+      (SELECT id FROM (SELECT id FROM `mesta_troska` WHERE `sifra` = 'LOGISTIKA') AS t),
+      (SELECT id FROM (SELECT id FROM `zaposleni` WHERE `sifra` = 'Z003') AS t),
+      'Škoda', 'Octavia', 'TMBAA0000P0000001', NULL),
+
+  ('OS-0004', 'Kancelarijski sto i stolica', NULL,
+      (SELECT id FROM (SELECT id FROM `klase_osnovnih_sredstava` WHERE `sifra` = 'OPR-NAM') AS t),
+      (SELECT id FROM (SELECT id FROM `statusi_sredstva` WHERE `sifra` = 'U_UPOTREBI') AS t),
+      35000.00, 35000.00, 35000.00, 1,
+      '2022-01-15', '2022-01-20',
+      (SELECT id FROM (SELECT id FROM `lokacije` WHERE `sifra` = 'POSL-NS') AS t),
+      (SELECT id FROM (SELECT id FROM `mesta_troska` WHERE `sifra` = 'PRODAJA') AS t),
+      (SELECT id FROM (SELECT id FROM `zaposleni` WHERE `sifra` = 'Z004') AS t),
+      NULL, NULL, NULL, NULL),
+
+  ('OS-0005', 'Zemljište uz magacin', 'Zemljišna parcela - ne amortizuje se',
+      (SELECT id FROM (SELECT id FROM `klase_osnovnih_sredstava` WHERE `sifra` = 'ZEM') AS t),
+      (SELECT id FROM (SELECT id FROM `statusi_sredstva` WHERE `sifra` = 'U_UPOTREBI') AS t),
+      8000000.00, 8000000.00, 8000000.00, 0,
+      '2015-06-01', '2015-06-01',
+      (SELECT id FROM (SELECT id FROM `lokacije` WHERE `sifra` = 'SEDISTE-MAGACIN') AS t),
+      (SELECT id FROM (SELECT id FROM `mesta_troska` WHERE `sifra` = 'UPRAVA') AS t),
+      NULL,
+      NULL, NULL, NULL, NULL),
+
+  ('OS-0006', 'Printer HP LaserJet Pro', NULL,
+      (SELECT id FROM (SELECT id FROM `klase_osnovnih_sredstava` WHERE `sifra` = 'OPR-IT') AS t),
+      (SELECT id FROM (SELECT id FROM `statusi_sredstva` WHERE `sifra` = 'U_UPOTREBI') AS t),
+      45000.00, 45000.00, 45000.00, 1,
+      '2023-11-01', '2023-11-05',
+      (SELECT id FROM (SELECT id FROM `lokacije` WHERE `sifra` = 'POSL-NIS') AS t),
+      (SELECT id FROM (SELECT id FROM `mesta_troska` WHERE `sifra` = 'PRODAJA') AS t),
+      (SELECT id FROM (SELECT id FROM `zaposleni` WHERE `sifra` = 'Z005') AS t),
+      'HP', 'LaserJet Pro M404dn', NULL, NULL),
+
+  ('OS-0007', 'Viljuškar Toyota', NULL,
+      (SELECT id FROM (SELECT id FROM `klase_osnovnih_sredstava` WHERE `sifra` = 'OPR-VOZ') AS t),
+      (SELECT id FROM (SELECT id FROM `statusi_sredstva` WHERE `sifra` = 'NA_ODRZAVANJU') AS t),
+      1800000.00, 1800000.00, 1800000.00, 1,
+      '2020-09-10', '2020-09-15',
+      (SELECT id FROM (SELECT id FROM `lokacije` WHERE `sifra` = 'SEDISTE-MAGACIN') AS t),
+      (SELECT id FROM (SELECT id FROM `mesta_troska` WHERE `sifra` = 'LOGISTIKA') AS t),
+      NULL,
+      'Toyota', 'Forklift 8FG', NULL, 'Na servisu zbog kvara hidraulike');
+-- =====================================================================================
 -- KRAJ SKRIPTE
 -- =====================================================================================
