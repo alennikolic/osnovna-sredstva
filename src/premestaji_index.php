@@ -2,9 +2,8 @@
 /**
  * premestaji_index.php
  * ---------------------
- * Hronološka lista svih premeštaja osnovnih sredstava (promena lokacije
- * i/ili mesta troška). Premeštaj ne dira zaduženje, pa nema kolonu za to -
- * za istoriju zaduženja/razduženja videti Reverse.
+ * Lista svih dokumenata premeštaja (zaglavlja), sa brojem stavki po
+ * dokumentu - isti obrazac kao reversi_index.php.
  */
 
 require_once 'auth.php';
@@ -13,19 +12,15 @@ require_once 'db.php';
 
 $stmt = $pdo->query(
     "SELECT
-        p.id, p.datum_premestaja, p.napomena,
-        os.id AS sredstvo_id, os.inventarski_broj, os.naziv AS naziv_sredstva,
-        sl.naziv AS stara_lokacija, nl.naziv AS nova_lokacija,
-        smt.naziv AS staro_mesto_troska, nmt.naziv AS novo_mesto_troska
-     FROM premestaji_sredstva p
-     JOIN osnovna_sredstva os ON os.id = p.sredstvo_id
-     LEFT JOIN lokacije sl ON sl.id = p.stara_lokacija_id
-     LEFT JOIN lokacije nl ON nl.id = p.nova_lokacija_id
-     LEFT JOIN mesta_troska smt ON smt.id = p.staro_mesto_troska_id
-     LEFT JOIN mesta_troska nmt ON nmt.id = p.novo_mesto_troska_id
-     ORDER BY p.datum_premestaja DESC, p.id DESC"
+        d.*,
+        nl.naziv AS nova_lokacija, nmt.naziv AS novo_mesto_troska,
+        (SELECT COUNT(*) FROM premestaji_sredstva p WHERE p.dokument_premestaja_id = d.id) AS broj_stavki
+     FROM dokumenti_premestaja d
+     LEFT JOIN lokacije nl ON nl.id = d.nova_lokacija_id
+     LEFT JOIN mesta_troska nmt ON nmt.id = d.novo_mesto_troska_id
+     ORDER BY d.datum_premestaja DESC, d.id DESC"
 );
-$premestaji = $stmt->fetchAll();
+$dokumenti = $stmt->fetchAll();
 
 $naslovStranice = 'Istorija premeštaja';
 require_once 'header.php';
@@ -38,27 +33,27 @@ require_once 'header.php';
     <table>
         <thead>
             <tr>
+                <th>Broj dokumenta</th>
                 <th>Datum</th>
-                <th>Sredstvo</th>
-                <th>Lokacija (staro → novo)</th>
-                <th>Mesto troška (staro → novo)</th>
-                <th>Napomena</th>
+                <th>Nova lokacija</th>
+                <th>Novo mesto troška</th>
+                <th>Broj stavki</th>
                 <th>Akcije</th>
             </tr>
         </thead>
         <tbody>
-            <?php if (empty($premestaji)): ?>
+            <?php if (empty($dokumenti)): ?>
                 <tr><td colspan="6" style="text-align:center;">Nema evidentiranih premeštaja.</td></tr>
             <?php else: ?>
-                <?php foreach ($premestaji as $p): ?>
+                <?php foreach ($dokumenti as $d): ?>
                     <tr>
-                        <td><?= htmlspecialchars($p['datum_premestaja']) ?></td>
-                        <td><strong><?= htmlspecialchars($p['inventarski_broj']) ?></strong> — <?= htmlspecialchars($p['naziv_sredstva']) ?></td>
-                        <td><?= htmlspecialchars($p['stara_lokacija'] ?? '—') ?> → <?= htmlspecialchars($p['nova_lokacija'] ?? '—') ?></td>
-                        <td><?= htmlspecialchars($p['staro_mesto_troska'] ?? '—') ?> → <?= htmlspecialchars($p['novo_mesto_troska'] ?? '—') ?></td>
-                        <td><?= htmlspecialchars($p['napomena'] ?? '') ?></td>
+                        <td><strong><?= htmlspecialchars($d['broj_dokumenta']) ?></strong></td>
+                        <td><?= htmlspecialchars($d['datum_premestaja']) ?></td>
+                        <td><?= htmlspecialchars($d['nova_lokacija'] ?? '—') ?></td>
+                        <td><?= htmlspecialchars($d['novo_mesto_troska'] ?? '—') ?></td>
+                        <td><?= (int)$d['broj_stavki'] ?></td>
                         <td class="akcije">
-                            <a href="os_pregled.php?id=<?= $p['sredstvo_id'] ?>">Pregled sredstva</a>
+                            <a href="premestaji_pregled.php?id=<?= $d['id'] ?>">Pregled</a>
                         </td>
                     </tr>
                 <?php endforeach; ?>
