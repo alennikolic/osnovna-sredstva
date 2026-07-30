@@ -42,6 +42,8 @@ SET SQL_MODE = 'NO_AUTO_VALUE_ON_ZERO';
 -- BRISANJE POSTOJEĆIH TABELA (obrnutim redosledom zavisnosti) - za čist reimport
 -- =====================================================================================
 DROP TABLE IF EXISTS `dokumenti_sredstva`;
+DROP TABLE IF EXISTS `stavke_reversa`;
+DROP TABLE IF EXISTS `reversi`;
 DROP TABLE IF EXISTS `stavke_popisa`;
 DROP TABLE IF EXISTS `popisi_osnovnih_sredstava`;
 DROP TABLE IF EXISTS `osiguranja_sredstva`;
@@ -805,6 +807,50 @@ CREATE TABLE `stavke_popisa` (
       REFERENCES `lokacije` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   COMMENT='Pojedinačne stavke (rezultati) popisa po sredstvu';
+
+
+-- =====================================================================================
+-- SEKCIJA 7B: REVERSI (formalno zaduženje sredstava zaposlenom)
+-- =====================================================================================
+-- Revers je dokument koji se štampa i potpisuje - jednom izdat revers se ne
+-- menja (nema "izmene stavki"), samo se može poništiti (status PONISTEN).
+-- Ako je nešto pogrešno uneto, izdaje se novi ispravan revers.
+
+CREATE TABLE `reversi` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `broj_reversa` VARCHAR(30) NOT NULL COMMENT 'npr. REV-2026-001 - generiše se automatski',
+  `datum_izdavanja` DATE NOT NULL,
+  `zaposleni_id` INT UNSIGNED NOT NULL COMMENT 'Zaposleni kome se zadužuju sredstva',
+  `korisnik_id` INT UNSIGNED NULL COMMENT 'Sistemski korisnik koji je izdao revers (audit trag)',
+  `status` ENUM('IZDAT','PONISTEN') NOT NULL DEFAULT 'IZDAT',
+  `napomena` TEXT NULL,
+  `datum_kreiranja` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_revers_broj` (`broj_reversa`),
+  KEY `idx_revers_zaposleni` (`zaposleni_id`),
+  KEY `idx_revers_korisnik` (`korisnik_id`),
+  CONSTRAINT `fk_revers_zaposleni` FOREIGN KEY (`zaposleni_id`)
+      REFERENCES `zaposleni` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_revers_korisnik` FOREIGN KEY (`korisnik_id`)
+      REFERENCES `korisnici` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  COMMENT='Reversi - dokumenti kojima se formalno potvrđuje zaduženje sredstava zaposlenom';
+
+
+CREATE TABLE `stavke_reversa` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `revers_id` INT UNSIGNED NOT NULL,
+  `sredstvo_id` BIGINT UNSIGNED NOT NULL,
+  `napomena` VARCHAR(500) NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_stavka_reversa` (`revers_id`,`sredstvo_id`),
+  KEY `idx_stavka_reversa_sredstvo` (`sredstvo_id`),
+  CONSTRAINT `fk_stavka_reversa_revers` FOREIGN KEY (`revers_id`)
+      REFERENCES `reversi` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_stavka_reversa_sredstvo` FOREIGN KEY (`sredstvo_id`)
+      REFERENCES `osnovna_sredstva` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  COMMENT='Stavke reversa - pojedinačna sredstva navedena na jednom reversu';
 
 
 -- =====================================================================================
