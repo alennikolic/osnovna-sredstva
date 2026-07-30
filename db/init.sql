@@ -1149,6 +1149,31 @@ ALTER TABLE `premestaji_sredstva`
 ALTER TABLE `reversi`
   MODIFY COLUMN `status` ENUM('U_PRIPREMI','IZDAT','VRACEN','PONISTEN') NOT NULL DEFAULT 'U_PRIPREMI';
 
+-- =====================================================================================
+-- IZMENA ŠEME: Status pipeline dokumenta premeštaja (U_PRIPREMI -> IZDAT / PONISTEN)
+-- =====================================================================================
+-- Isti obrazac kao kod reversa: premeštaj se prvo čuva kao NACRT, a stvarna
+-- promena lokacije/mesta troška (upis u osnovna_sredstva i transakcije_sredstva)
+-- dešava se tek kada se dokument IZDA. Nema statusa "vraćeno" - premeštaj je
+-- jednosmerna promena, ne postoji koncept "vraćanja" kao kod reversa.
+-- Poništavanje je dozvoljeno samo dok je dokument U_PRIPREMI.
+
+ALTER TABLE `dokumenti_premestaja`
+  ADD COLUMN `status` ENUM('U_PRIPREMI','IZDAT','PONISTEN') NOT NULL DEFAULT 'U_PRIPREMI' AFTER `broj_dokumenta`;
+
+CREATE TABLE `stavke_premestaja` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `dokument_premestaja_id` INT UNSIGNED NOT NULL,
+  `sredstvo_id` BIGINT UNSIGNED NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_stavka_premestaja` (`dokument_premestaja_id`,`sredstvo_id`),
+  KEY `idx_stavka_premestaja_sredstvo` (`sredstvo_id`),
+  CONSTRAINT `fk_stavka_premestaja_dokument` FOREIGN KEY (`dokument_premestaja_id`)
+      REFERENCES `dokumenti_premestaja` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_stavka_premestaja_sredstvo` FOREIGN KEY (`sredstvo_id`)
+      REFERENCES `osnovna_sredstva` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  COMMENT='Stavke (planirana sredstva) nacrta dokumenta premeštaja - pre izdavanja. Nakon izdavanja stvarno izvršene promene se beleže u premestaji_sredstva.';
 
 -- =====================================================================================
 -- KRAJ SKRIPTE
