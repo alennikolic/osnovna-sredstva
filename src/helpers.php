@@ -323,10 +323,10 @@ function sledeciBrojReversa(PDO $pdo): string
 function oznakaStatusaReversa(string $status): array
 {
     $mapa = [
-        'IZDAT'            => ['Izdat', 'oznaka-aktivna'],
-        'DELIMICNO_VRACEN' => ['Delimično vraćen', 'oznaka-u-toku'],
-        'VRACEN'           => ['Vraćen', 'oznaka-neaktivna'],
-        'PONISTEN'         => ['Poništen', 'oznaka-otkazana'],
+        'U_PRIPREMI' => ['U pripremi', 'oznaka-u-toku'],
+        'IZDAT'      => ['Izdat', 'oznaka-aktivna'],
+        'VRACEN'     => ['Vraćen', 'oznaka-neaktivna'],
+        'PONISTEN'   => ['Poništen', 'oznaka-otkazana'],
     ];
     return $mapa[$status] ?? [$status, 'oznaka-neaktivna'];
 }
