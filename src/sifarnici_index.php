@@ -3,8 +3,7 @@
  * sifarnici_index.php
  * --------------------
  * Čvorna (hub) stranica menija "Šifarnici" - objedinjuje na jednom mestu sve
- * matične/šifrirane podatke koji se koriste u celoj aplikaciji. Isti obrazac
- * kao kretanje_index.php.
+ * matične/šifrirane podatke koji se koriste u celoj aplikaciji.
  */
 
 require_once 'auth.php';
@@ -44,6 +43,18 @@ require_once 'header.php';
         <h3 style="margin-top:0;">Dobavljači</h3>
         <p class="napomena-polje">Šifarnik dobavljača od kojih se nabavljaju osnovna sredstva.</p>
         <a href="dobavljaci_index.php" class="btn">Otvori</a>
+    </div>
+
+    <div class="form-container" style="flex:1; min-width:260px; margin:0;">
+        <h3 style="margin-top:0;">Amortizacione grupe</h3>
+        <p class="napomena-polje">Poreske/računovodstvene grupe sa stopom i vekom trajanja - osnova za obračun amortizacije.</p>
+        <a href="amortizacione_grupe_index.php" class="btn">Otvori</a>
+    </div>
+
+    <div class="form-container" style="flex:1; min-width:260px; margin:0;">
+        <h3 style="margin-top:0;">Metode amortizacije</h3>
+        <p class="napomena-polje">Algoritmi obračuna amortizacije (linearna, degresivna...).</p>
+        <a href="metode_amortizacije_index.php" class="btn">Otvori</a>
     </div>
 
 </div>
