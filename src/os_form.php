@@ -24,6 +24,8 @@ if ($izmena) {
     $stmt = $pdo->prepare(
         "SELECT
             os.lokacija_id, os.mesto_troska_id, os.odgovorno_lice, os.zaposleni_id,
+            os.nabavna_vrednost, os.osnovica_za_amortizaciju,
+            os.akumulirana_amortizacija, os.sadasnja_knjigovodstvena_vrednost,
             l.naziv AS naziv_lokacije,
             mt.naziv AS naziv_mesta_troska,
             CASE WHEN z.id IS NOT NULL THEN CONCAT(z.ime, ' ', z.prezime) ELSE NULL END AS naziv_zaposlenog
@@ -68,7 +70,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $podaci['opis'] = trim($_POST['opis'] ?? '');
     $podaci['klasa_id'] = $_POST['klasa_id'] ?? '';
     $podaci['status_id'] = $_POST['status_id'] ?? '';
-    $podaci['nabavna_vrednost'] = $_POST['nabavna_vrednost'] ?? '0';
+    // Nabavna vrednost se čita iz POST-a SAMO pri kreiranju - kod izmene je
+    // read-only (istorijska činjenica), vrednost je već učitana gore u
+    // $trenutnoStanjeZaduzenja.
+    if (!$izmena) {
+        $podaci['nabavna_vrednost'] = $_POST['nabavna_vrednost'] ?? '0';
+    } else {
+        $podaci['nabavna_vrednost'] = $trenutnoStanjeZaduzenja['nabavna_vrednost'];
+    }
     $podaci['datum_nabavke'] = trim($_POST['datum_nabavke'] ?? '');
     $podaci['datum_stavljanja_u_upotrebu'] = trim($_POST['datum_stavljanja_u_upotrebu'] ?? '');
     $podaci['proizvodjac'] = trim($_POST['proizvodjac'] ?? '');
@@ -113,7 +122,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             opis = :opis,
                             klasa_id = :klasa,
                             status_id = :status,
-                            nabavna_vrednost = :nabavna,
                             datum_nabavke = :datum_nabavke,
                             datum_stavljanja_u_upotrebu = :datum_upotreba,
                             proizvodjac = :proizvodjac,
@@ -248,14 +256,24 @@ require_once 'header.php';
 
         <div class="red-2">
             <div class="form-group">
-                <label>Nabavna vrednost (RSD) *</label>
-                <input type="number" step="0.01" name="nabavna_vrednost" required value="<?= htmlspecialchars($podaci['nabavna_vrednost']) ?>">
+                <?php if (!$izmena): ?>
+                    <label>Nabavna vrednost (RSD) *</label>
+                    <input type="number" step="0.01" name="nabavna_vrednost" required value="<?= htmlspecialchars($podaci['nabavna_vrednost']) ?>">
+                <?php else: ?>
+                    <label>Nabavna vrednost (RSD)</label>
+                    <div class="detalj-vrednost" style="padding-top: 8px;"><?= number_format((float)$podaci['nabavna_vrednost'], 2, ',', '.') ?> RSD</div>
+                <?php endif; ?>
             </div>
             <div class="form-group">
                 <label>Datum nabavke *</label>
                 <input type="date" name="datum_nabavke" required value="<?= htmlspecialchars($podaci['datum_nabavke']) ?>">
             </div>
         </div>
+        <?php if ($izmena): ?>
+            <p class="napomena-polje" style="margin-top:-10px; margin-bottom: 15px;">
+                Nabavna vrednost se ne menja direktno ovde - to je istorijska činjenica. Za usklađivanje vrednosti (revalorizacija) ili kapitalno ulaganje koje je povećava, potreban je poseban modul (uskoro).
+            </p>
+        <?php endif; ?>
 
         <div class="red-2">
             <div class="form-group">
