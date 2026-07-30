@@ -38,8 +38,9 @@ if (!$sredstvo) {
 $zaduzenoLice = $sredstvo['naziv_zaposlenog'] ?? $sredstvo['odgovorno_lice'] ?? null;
 
 // Istorija premeštaja OVOG sredstva - lokacija i mesto troška, staro/novo,
-// sa vezom ka dokumentu (broj_dokumenta) za pregled/štampu. dokument_id je
-// NULL za retke zapise nastale pre uvođenja dokumenta premeštaja.
+// sa vezom ka dokumentu (broj_dokumenta) za pregled/štampu. Za zaduženje i
+// razduženje videti dugme "Istorija kretanja" ispod (vodi na
+// kretanje_istorija.php filtrirano na ovo sredstvo).
 $stmt = $pdo->prepare(
     "SELECT
         p.id, p.datum_premestaja, p.napomena,
@@ -166,6 +167,7 @@ require_once 'header.php';
     <div style="margin-top: 25px;">
         <a href="os_form.php?id=<?= $sredstvo['id'] ?>" class="btn">Izmeni</a>
         <a href="premestaj_form.php?sredstvo_id=<?= $sredstvo['id'] ?>" class="btn">Premesti</a>
+        <a href="kretanje_istorija.php?pojam=<?= urlencode($sredstvo['inventarski_broj']) ?>" class="btn">Istorija kretanja</a>
         <a href="index.php" class="btn-cancel">Nazad na pregled</a>
     </div>
 </div>
