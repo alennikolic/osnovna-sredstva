@@ -1,11 +1,17 @@
 <?php
+/**
+ * revers_form.php
+ * ----------------
+ * Kreira NACRT reversa (status U_PRIPREMI) - stvarno zaduženje (upis
+ * osnovna_sredstva.zaposleni_id i transakcije_sredstva) dešava se tek kada
+ * se revers IZDA na revers_pregled.php. Ovo omogućava da se nacrt ispravi
+ * ili poništi pre nego što postane pravno obavezujući dokument.
+ */
+
 require_once 'auth.php';
 zahtevajPrijavu();
 require_once 'db.php';
 require_once 'helpers.php';
-
-// Revers je formalan, štampan dokument - namerno nema "izmena" posle izdavanja,
-// samo kreiranje novog i eventualno poništavanje postojećeg (videti revers_pregled.php).
 
 $poruka = '';
 
@@ -33,16 +39,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $brojReversa = sledeciBrojReversa($pdo);
             $trenutni = trenutniKorisnik();
 
-            $vrstaZaduzenje = $pdo->query(
-                "SELECT id FROM vrste_transakcija WHERE sifra = 'ZADUZENJE'"
-            )->fetch();
-            if (!$vrstaZaduzenje) {
-                throw new \RuntimeException('Vrsta transakcije ZADUZENJE ne postoji u bazi - proverite da li je izmena šeme za Istoriju kretanja primenjena (dodatak na kraju init.sql).');
-            }
-
             $stmt = $pdo->prepare(
                 "INSERT INTO reversi (broj_reversa, datum_izdavanja, zaposleni_id, korisnik_id, napomena, status)
-                 VALUES (:broj, :datum, :zaposleni, :korisnik, :napomena, 'IZDAT')"
+                 VALUES (:broj, :datum, :zaposleni, :korisnik, :napomena, 'U_PRIPREMI')"
             );
             $stmt->execute([
                 ':broj'      => $brojReversa,
@@ -56,33 +55,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmtStavka = $pdo->prepare(
                 "INSERT INTO stavke_reversa (revers_id, sredstvo_id) VALUES (:revers, :sredstvo)"
             );
-            // Revers formalno potvrđuje zaduženje - zato odmah ažuriramo i
-            // osnovna_sredstva.zaposleni_id da se "Zaduženje" na stranici
-            // sredstva slaže sa poslednjim izdatim reversom.
-            $stmtZaduzenje = $pdo->prepare(
-                "UPDATE osnovna_sredstva SET zaposleni_id = :zaposleni WHERE id = :id"
-            );
-            // I upis u centralni dnevnik transakcija - da bi "Istorija kretanja"
-            // prikazivala i zaduženje, ne samo premeštaj i razduženje.
-            $stmtTransakcija = $pdo->prepare(
-                "INSERT INTO transakcije_sredstva
-                    (sredstvo_id, vrsta_transakcije_id, datum_transakcije, broj_dokumenta, opis, korisnik_id, napomena)
-                 VALUES
-                    (:sredstvo, :vrsta, :datum, :broj_dok, :opis, :korisnik, :napomena)"
-            );
-
             foreach ($podaci['sredstva'] as $sredstvoId) {
                 $stmtStavka->execute([':revers' => $reversId, ':sredstvo' => $sredstvoId]);
-                $stmtZaduzenje->execute([':zaposleni' => (int)$podaci['zaposleni_id'], ':id' => $sredstvoId]);
-                $stmtTransakcija->execute([
-                    ':sredstvo' => $sredstvoId,
-                    ':vrsta'    => $vrstaZaduzenje['id'],
-                    ':datum'    => $podaci['datum_izdavanja'],
-                    ':broj_dok' => $brojReversa,
-                    ':opis'     => 'Zaduženje po reversu ' . $brojReversa,
-                    ':korisnik' => $trenutni['id'] ?? null,
-                    ':napomena' => $podaci['napomena'] !== '' ? $podaci['napomena'] : null,
-                ]);
             }
 
             $pdo->commit();
@@ -92,13 +66,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } catch (\PDOException $e) {
             $pdo->rollBack();
             if ($e->getCode() === '23000') {
-                $poruka = "Došlo je do konflikta pri generisanju broja reversa (verovatno je neko drugi baš u ovom trenutku izdao revers). Pokušajte ponovo.";
+                $poruka = "Došlo je do konflikta pri generisanju broja reversa (verovatno je neko drugi baš u ovom trenutku napravio revers). Pokušajte ponovo.";
             } else {
                 $poruka = "Greška pri upisu u bazu: " . $e->getMessage();
             }
-        } catch (\RuntimeException $e) {
-            $pdo->rollBack();
-            $poruka = $e->getMessage();
         }
     }
 }
@@ -106,7 +77,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $zaposleniLista = $pdo->query("SELECT id, ime, prezime FROM zaposleni WHERE aktivan = 1 ORDER BY prezime, ime")->fetchAll();
 
 // Sredstva dostupna za revers - isto pravilo kao kod popisa: svi statusi koji
-// NISU završni (rashodovano/prodato/otpisano se više ne zadužuje).
+// NISU završni. "trenutno_zaduzen" je informativan prikaz - stvarna promena
+// se dešava tek pri IZDAVANJU ovog nacrta (automatski razdužuje staro).
 $stmt = $pdo->query(
     "SELECT os.id, os.inventarski_broj, os.naziv, k.naziv AS naziv_klase,
             CASE WHEN z.id IS NOT NULL THEN CONCAT(z.ime, ' ', z.prezime) ELSE NULL END AS trenutno_zaduzen
@@ -125,6 +97,9 @@ require_once 'header.php';
 
 <div class="form-container forma-siroka">
     <h2>Novi revers</h2>
+    <p class="napomena-polje" style="margin-top:-10px; margin-bottom: 20px;">
+        Revers se prvo čuva kao nacrt ("U pripremi") - zaduženje se stvarno izvršava tek kada ga izdate na sledećem ekranu.
+    </p>
 
     <?php if ($poruka): ?>
         <div class="error"><?= htmlspecialchars($poruka) ?></div>
@@ -167,14 +142,14 @@ require_once 'header.php';
                         <?= htmlspecialchars($sr['inventarski_broj'] . ' - ' . $sr['naziv']) ?>
                         <span class="napomena-polje">(<?= htmlspecialchars($sr['naziv_klase']) ?>)</span>
                         <?php if ($sr['trenutno_zaduzen']): ?>
-                            <span class="napomena-polje">— trenutno zaduženo: <?= htmlspecialchars($sr['trenutno_zaduzen']) ?></span>
+                            <span class="napomena-polje">— trenutno zaduženo: <?= htmlspecialchars($sr['trenutno_zaduzen']) ?> (automatski razduženo pri izdavanju ovog reversa)</span>
                         <?php endif; ?>
                     </label>
                 <?php endforeach; ?>
             </div>
         </div>
 
-        <button type="submit" class="btn">Izdaj revers</button>
+        <button type="submit" class="btn">Sačuvaj nacrt reversa</button>
         <a href="reversi_index.php" class="btn-cancel">Otkaži</a>
     </form>
 </div>

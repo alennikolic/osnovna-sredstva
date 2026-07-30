@@ -1,4 +1,17 @@
 <?php
+/**
+ * revers_pregled.php
+ * -------------------
+ * Pregled jednog reversa. Dok je status U_PRIPREMI, dostupne su akcije
+ * "Izdaj revers" (stvarno zaduženje), "Poništi nacrt", i uređivanje stavki
+ * (dodavanje/uklanjanje sredstava sa nacrta pre izdavanja). Nakon izdavanja,
+ * revers je nepromenljiv dokument - samo se prikazuje i može odštampati.
+ *
+ * Izdavanje AUTOMATSKI razdužuje svako sredstvo sa OVOG reversa koje je u
+ * tom trenutku zaduženo na nekom DRUGOM već izdatom reversu - nema više
+ * ručnog/parcijalnog vraćanja.
+ */
+
 require_once 'auth.php';
 zahtevajPrijavu();
 require_once 'db.php';
@@ -30,7 +43,7 @@ $poruka = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['akcija'])) {
 
-    if ($_POST['akcija'] === 'ponisti' && $revers['status'] === 'IZDAT') {
+    if ($_POST['akcija'] === 'ponisti' && $revers['status'] === 'U_PRIPREMI') {
         try {
             $pdo->prepare("UPDATE reversi SET status = 'PONISTEN' WHERE id = :id")->execute([':id' => $id]);
             header("Location: revers_pregled.php?id=" . $id);
@@ -40,128 +53,203 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['akcija'])) {
         }
     }
 
-    if ($_POST['akcija'] === 'vrati' && in_array($revers['status'], ['IZDAT', 'DELIMICNO_VRACEN'], true)) {
-        $stavkeZaVracanje = array_map('intval', $_POST['stavke'] ?? []);
-        $datumVracanja = trim($_POST['datum_vracanja'] ?? '');
-        $napomenaVracanja = trim($_POST['napomena_vracanja'] ?? '');
-
-        if (empty($stavkeZaVracanje)) {
-            $poruka = "Izaberite bar jednu stavku za vraćanje.";
-        } elseif ($datumVracanja === '') {
-            $poruka = "Datum vraćanja je obavezan.";
+    if ($_POST['akcija'] === 'dodaj_stavke' && $revers['status'] === 'U_PRIPREMI') {
+        $novaSredstva = array_map('intval', $_POST['sredstva'] ?? []);
+        if (empty($novaSredstva)) {
+            $poruka = "Izaberite bar jedno sredstvo za dodavanje.";
         } else {
             try {
-                $pdo->beginTransaction();
-
-                $trenutni = trenutniKorisnik();
-
-                $vrstaTransakcije = $pdo->query(
-                    "SELECT id FROM vrste_transakcija WHERE sifra = 'RAZDUZENJE'"
-                )->fetch();
-                if (!$vrstaTransakcije) {
-                    throw new \RuntimeException('Vrsta transakcije RAZDUZENJE ne postoji u bazi - proverite da li je izmena šeme za razduženje reversa primenjena (dodatak na kraju init.sql).');
-                }
-
-                // Uzimamo samo stavke koje pripadaju OVOM reversu i koje još
-                // nisu vraćene - zaštita od manipulacije parametrima forme.
-                $stmtStavka = $pdo->prepare(
-                    "SELECT id, sredstvo_id FROM stavke_reversa
-                     WHERE id = :id AND revers_id = :revers AND vraceno = 0"
+                $stmtProveri = $pdo->prepare(
+                    "SELECT COUNT(*) FROM stavke_reversa WHERE revers_id = :revers AND sredstvo_id = :sredstvo"
                 );
-                $stmtOznaciVraceno = $pdo->prepare(
-                    "UPDATE stavke_reversa
-                     SET vraceno = 1, datum_vracanja = :datum, napomena_vracanja = :napomena, korisnik_vratio_id = :korisnik
-                     WHERE id = :id"
+                $stmtDodaj = $pdo->prepare(
+                    "INSERT INTO stavke_reversa (revers_id, sredstvo_id) VALUES (:revers, :sredstvo)"
                 );
-                $stmtTransakcija = $pdo->prepare(
-                    "INSERT INTO transakcije_sredstva
-                        (sredstvo_id, vrsta_transakcije_id, datum_transakcije, opis, korisnik_id, napomena)
-                     VALUES
-                        (:sredstvo, :vrsta, :datum, :opis, :korisnik, :napomena)"
-                );
-                // Sredstvo se razdužuje (zaposleni_id se briše) samo ako je i dalje
-                // zaduženo baš na zaposlenog sa OVOG reversa - ako je u međuvremenu
-                // premešteno ili zaduženo nekim drugim, novijim reversom, ne diramo
-                // trenutno stanje sredstva.
-                $stmtOslobodiZaduzenje = $pdo->prepare(
-                    "UPDATE osnovna_sredstva SET zaposleni_id = NULL
-                     WHERE id = :sredstvo AND zaposleni_id = :zaposleni"
-                );
-
-                $brojVracenih = 0;
-                foreach ($stavkeZaVracanje as $stavkaId) {
-                    $stmtStavka->execute([':id' => $stavkaId, ':revers' => $id]);
-                    $stavka = $stmtStavka->fetch();
-                    if (!$stavka) {
-                        continue; // već vraćeno ili ne pripada ovom reversu - preskoči
+                foreach ($novaSredstva as $sredstvoId) {
+                    $stmtProveri->execute([':revers' => $id, ':sredstvo' => $sredstvoId]);
+                    if ((int)$stmtProveri->fetchColumn() > 0) {
+                        continue; // već je na ovom reversu - preskoči
                     }
+                    $stmtDodaj->execute([':revers' => $id, ':sredstvo' => $sredstvoId]);
+                }
+                header("Location: revers_pregled.php?id=" . $id);
+                exit;
+            } catch (\PDOException $e) {
+                $poruka = "Greška pri dodavanju stavki: " . $e->getMessage();
+            }
+        }
+    }
 
+    if ($_POST['akcija'] === 'ukloni_stavku' && $revers['status'] === 'U_PRIPREMI') {
+        $stavkaId = isset($_POST['stavka_id']) ? (int)$_POST['stavka_id'] : 0;
+        $ukupnoStavki = (int)$pdo->query(
+            "SELECT COUNT(*) FROM stavke_reversa WHERE revers_id = " . (int)$id
+        )->fetchColumn();
+
+        if ($ukupnoStavki <= 1) {
+            $poruka = "Revers mora imati bar jednu stavku - dodajte drugu pre uklanjanja poslednje, ili poništite ceo nacrt.";
+        } else {
+            try {
+                $pdo->prepare("DELETE FROM stavke_reversa WHERE id = :id AND revers_id = :revers")
+                    ->execute([':id' => $stavkaId, ':revers' => $id]);
+                header("Location: revers_pregled.php?id=" . $id);
+                exit;
+            } catch (\PDOException $e) {
+                $poruka = "Greška pri uklanjanju stavke: " . $e->getMessage();
+            }
+        }
+    }
+
+    if ($_POST['akcija'] === 'izdaj' && $revers['status'] === 'U_PRIPREMI') {
+        try {
+            $pdo->beginTransaction();
+
+            $trenutni = trenutniKorisnik();
+
+            $vrstaZaduzenje = $pdo->query("SELECT id FROM vrste_transakcija WHERE sifra = 'ZADUZENJE'")->fetch();
+            $vrstaRazduzenje = $pdo->query("SELECT id FROM vrste_transakcija WHERE sifra = 'RAZDUZENJE'")->fetch();
+            if (!$vrstaZaduzenje || !$vrstaRazduzenje) {
+                throw new \RuntimeException('Vrste transakcija ZADUZENJE/RAZDUZENJE ne postoje u bazi.');
+            }
+
+            $stmtStavkeOvogReversa = $pdo->prepare("SELECT id, sredstvo_id FROM stavke_reversa WHERE revers_id = :id");
+            $stmtStavkeOvogReversa->execute([':id' => $id]);
+            $stavkeOvogReversa = $stmtStavkeOvogReversa->fetchAll();
+
+            if (empty($stavkeOvogReversa)) {
+                throw new \RuntimeException('Revers nema nijednu stavku - ne može se izdati.');
+            }
+
+            // Bilo koja DRUGA otvorena stavka (na nekom drugom već IZDATOM
+            // reversu) za isto sredstvo - automatski je razdužujemo.
+            $stmtDrugaStavka = $pdo->prepare(
+                "SELECT sr.id, sr.revers_id
+                 FROM stavke_reversa sr
+                 JOIN reversi r2 ON r2.id = sr.revers_id
+                 WHERE sr.sredstvo_id = :sredstvo AND sr.vraceno = 0
+                   AND r2.status = 'IZDAT' AND sr.revers_id != :ovaj_revers"
+            );
+            $stmtOznaciVraceno = $pdo->prepare(
+                "UPDATE stavke_reversa
+                 SET vraceno = 1, datum_vracanja = :datum, napomena_vracanja = :napomena, korisnik_vratio_id = :korisnik
+                 WHERE id = :id"
+            );
+            $stmtTransakcija = $pdo->prepare(
+                "INSERT INTO transakcije_sredstva
+                    (sredstvo_id, vrsta_transakcije_id, datum_transakcije, broj_dokumenta, opis, korisnik_id, napomena)
+                 VALUES
+                    (:sredstvo, :vrsta, :datum, :broj_dok, :opis, :korisnik, :napomena)"
+            );
+            $stmtAzurirajZaduzenje = $pdo->prepare(
+                "UPDATE osnovna_sredstva SET zaposleni_id = :zaposleni WHERE id = :id"
+            );
+
+            foreach ($stavkeOvogReversa as $stavka) {
+                // 1) Automatsko razduženje ako sredstvo ima otvorenu stavku negde drugde
+                $stmtDrugaStavka->execute([':sredstvo' => $stavka['sredstvo_id'], ':ovaj_revers' => $id]);
+                $drugaStavka = $stmtDrugaStavka->fetch();
+
+                if ($drugaStavka) {
                     $stmtOznaciVraceno->execute([
-                        ':datum'    => $datumVracanja,
-                        ':napomena' => $napomenaVracanja !== '' ? $napomenaVracanja : null,
+                        ':datum'    => $revers['datum_izdavanja'],
+                        ':napomena' => 'Automatski razduženo - sredstvo ponovo zaduženo po reversu ' . $revers['broj_reversa'],
                         ':korisnik' => $trenutni['id'] ?? null,
-                        ':id'       => $stavkaId,
+                        ':id'       => $drugaStavka['id'],
                     ]);
 
                     $stmtTransakcija->execute([
                         ':sredstvo' => $stavka['sredstvo_id'],
-                        ':vrsta'    => $vrstaTransakcije['id'],
-                        ':datum'    => $datumVracanja,
-                        ':opis'     => 'Razduženje - vraćanje sredstva po reversu ' . $revers['broj_reversa'],
+                        ':vrsta'    => $vrstaRazduzenje['id'],
+                        ':datum'    => $revers['datum_izdavanja'],
+                        ':broj_dok' => $revers['broj_reversa'],
+                        ':opis'     => 'Automatsko razduženje - sredstvo ponovo zaduženo po reversu ' . $revers['broj_reversa'],
                         ':korisnik' => $trenutni['id'] ?? null,
-                        ':napomena' => $napomenaVracanja !== '' ? $napomenaVracanja : null,
+                        ':napomena' => null,
                     ]);
 
-                    $stmtOslobodiZaduzenje->execute([
-                        ':sredstvo'  => $stavka['sredstvo_id'],
-                        ':zaposleni' => $revers['zaposleni_id'],
-                    ]);
-
-                    $brojVracenih++;
+                    $ukupno = (int)$pdo->query(
+                        "SELECT COUNT(*) FROM stavke_reversa WHERE revers_id = " . (int)$drugaStavka['revers_id']
+                    )->fetchColumn();
+                    $vraceno = (int)$pdo->query(
+                        "SELECT COUNT(*) FROM stavke_reversa WHERE revers_id = " . (int)$drugaStavka['revers_id'] . " AND vraceno = 1"
+                    )->fetchColumn();
+                    if ($vraceno >= $ukupno) {
+                        $pdo->prepare("UPDATE reversi SET status = 'VRACEN' WHERE id = :id")
+                            ->execute([':id' => $drugaStavka['revers_id']]);
+                    }
                 }
 
-                if ($brojVracenih === 0) {
-                    $pdo->rollBack();
-                    $poruka = "Izabrane stavke su već vraćene ili ne pripadaju ovom reversu.";
-                } else {
-                    $ukupnoStavki = (int)$pdo->query(
-                        "SELECT COUNT(*) FROM stavke_reversa WHERE revers_id = " . (int)$id
-                    )->fetchColumn();
-                    $ukupnoVracenih = (int)$pdo->query(
-                        "SELECT COUNT(*) FROM stavke_reversa WHERE revers_id = " . (int)$id . " AND vraceno = 1"
-                    )->fetchColumn();
+                // 2) Zaduži OVIM reversom
+                $stmtTransakcija->execute([
+                    ':sredstvo' => $stavka['sredstvo_id'],
+                    ':vrsta'    => $vrstaZaduzenje['id'],
+                    ':datum'    => $revers['datum_izdavanja'],
+                    ':broj_dok' => $revers['broj_reversa'],
+                    ':opis'     => 'Zaduženje po reversu ' . $revers['broj_reversa'],
+                    ':korisnik' => $trenutni['id'] ?? null,
+                    ':napomena' => $revers['napomena'],
+                ]);
 
-                    $noviStatus = $ukupnoVracenih >= $ukupnoStavki ? 'VRACEN' : 'DELIMICNO_VRACEN';
-                    $pdo->prepare("UPDATE reversi SET status = :status WHERE id = :id")
-                        ->execute([':status' => $noviStatus, ':id' => $id]);
-
-                    $pdo->commit();
-
-                    header("Location: revers_pregled.php?id=" . $id);
-                    exit;
-                }
-            } catch (\PDOException $e) {
-                $pdo->rollBack();
-                $poruka = "Greška pri upisu u bazu: " . $e->getMessage();
-            } catch (\RuntimeException $e) {
-                $pdo->rollBack();
-                $poruka = $e->getMessage();
+                $stmtAzurirajZaduzenje->execute([
+                    ':zaposleni' => $revers['zaposleni_id'],
+                    ':id'        => $stavka['sredstvo_id'],
+                ]);
             }
+
+            $pdo->prepare("UPDATE reversi SET status = 'IZDAT' WHERE id = :id")->execute([':id' => $id]);
+
+            $pdo->commit();
+            header("Location: revers_pregled.php?id=" . $id);
+            exit;
+        } catch (\PDOException $e) {
+            $pdo->rollBack();
+            $poruka = "Greška pri izdavanju: " . $e->getMessage();
+        } catch (\RuntimeException $e) {
+            $pdo->rollBack();
+            $poruka = $e->getMessage();
         }
     }
 }
 
 $stmt = $pdo->prepare(
-    "SELECT sr.id, sr.vraceno, sr.datum_vracanja, sr.napomena_vracanja,
-            os.id AS sredstvo_id, os.inventarski_broj, os.naziv, k.naziv AS naziv_klase
+    "SELECT sr.id, sr.sredstvo_id, sr.vraceno, sr.datum_vracanja, sr.napomena_vracanja,
+            os.inventarski_broj, os.naziv, k.naziv AS naziv_klase
      FROM stavke_reversa sr
      JOIN osnovna_sredstva os ON os.id = sr.sredstvo_id
      JOIN klase_osnovnih_sredstava k ON k.id = os.klasa_id
      WHERE sr.revers_id = :id
-     ORDER BY sr.vraceno ASC, os.naziv"
+     ORDER BY os.naziv"
 );
 $stmt->execute([':id' => $id]);
 $stavke = $stmt->fetchAll();
+
+// Dostupna sredstva za DODAVANJE na nacrt - sva sredstva u nezavršnom
+// statusu, MINUS ona koja su već na ovom reversu. Učitava se samo dok je
+// revers U_PRIPREMI (nakon izdavanja se stavke više ne menjaju).
+$dostupnaSredstva = [];
+if ($revers['status'] === 'U_PRIPREMI') {
+    $vecNaReversu = array_column($stavke, 'sredstvo_id');
+
+    $sql = "SELECT os.id, os.inventarski_broj, os.naziv, k.naziv AS naziv_klase,
+                   CASE WHEN z.id IS NOT NULL THEN CONCAT(z.ime, ' ', z.prezime) ELSE NULL END AS trenutno_zaduzen
+            FROM osnovna_sredstva os
+            JOIN klase_osnovnih_sredstava k ON k.id = os.klasa_id
+            JOIN statusi_sredstva s ON s.id = os.status_id
+            LEFT JOIN zaposleni z ON z.id = os.zaposleni_id
+            WHERE s.da_li_je_zavrsni_status = 0";
+
+    $parametri = [];
+    if (!empty($vecNaReversu)) {
+        $placeholderi = implode(',', array_fill(0, count($vecNaReversu), '?'));
+        $sql .= " AND os.id NOT IN ($placeholderi)";
+        $parametri = $vecNaReversu;
+    }
+    $sql .= " ORDER BY os.naziv";
+
+    $stmtDostupna = $pdo->prepare($sql);
+    $stmtDostupna->execute($parametri);
+    $dostupnaSredstva = $stmtDostupna->fetchAll();
+}
 
 [$nazivStatusaReversa, $klasaOznakeReversa] = oznakaStatusaReversa($revers['status']);
 
@@ -188,7 +276,7 @@ require_once 'header.php';
         <span class="detalj-vrednost"><?= htmlspecialchars($revers['datum_izdavanja']) ?></span>
     </div>
     <div class="detalj-red">
-        <span class="detalj-labela">Izdao</span>
+        <span class="detalj-labela">Kreirao</span>
         <span class="detalj-vrednost"><?= htmlspecialchars($revers['izdao_korisnicko_ime'] ?? '—') ?></span>
     </div>
     <?php if (!empty($revers['napomena'])): ?>
@@ -199,74 +287,35 @@ require_once 'header.php';
     <?php endif; ?>
 
     <div style="margin-top: 20px;">
-        <a href="revers_stampa.php?id=<?= $revers['id'] ?>" class="btn" target="_blank">Odštampaj revers</a>
-        <?php if ($revers['status'] === 'IZDAT'): ?>
-            <form method="POST" style="display:inline;" onsubmit="return confirm('Poništiti ovaj revers? Napomena: poništavanje NE menja automatski trenutno zaduženje sredstava - to se radi posebno, po potrebi.');">
-                <input type="hidden" name="akcija" value="ponisti">
-                <button type="submit" class="btn" style="background:#dc3545;">Poništi revers</button>
+        <?php if ($revers['status'] === 'U_PRIPREMI'): ?>
+            <form method="POST" style="display:inline;" onsubmit="return confirm('Izdati ovaj revers? Ovim se stvarno zadužuju sredstva i menja se knjigovodstveno stanje.');">
+                <input type="hidden" name="akcija" value="izdaj">
+                <button type="submit" class="btn">Izdaj revers</button>
             </form>
+            <form method="POST" style="display:inline;" onsubmit="return confirm('Poništiti ovaj nacrt reversa?');">
+                <input type="hidden" name="akcija" value="ponisti">
+                <button type="submit" class="btn" style="background:#dc3545;">Poništi nacrt</button>
+            </form>
+        <?php else: ?>
+            <a href="revers_stampa.php?id=<?= $revers['id'] ?>" class="btn" target="_blank">Odštampaj revers</a>
         <?php endif; ?>
     </div>
 </div>
 
-<?php if (in_array($revers['status'], ['IZDAT', 'DELIMICNO_VRACEN'], true)): ?>
-<div class="form-container forma-siroka" style="margin-top: 20px;">
-    <h3 style="margin-top:0;">Razduženje - vraćanje sredstava</h3>
-    <p class="napomena-polje">Označite koja sredstva se vraćaju i unesite datum vraćanja.</p>
-
-    <form method="POST" action="">
-        <input type="hidden" name="akcija" value="vrati">
-
-        <div class="red-2">
-            <div class="form-group">
-                <label>Datum vraćanja *</label>
-                <input type="date" name="datum_vracanja" required value="<?= date('Y-m-d') ?>">
-            </div>
-        </div>
-
-        <div class="form-group">
-            <label>Napomena o vraćanju <span class="napomena-polje">(stanje sredstva i sl., opciono)</span></label>
-            <textarea name="napomena_vracanja"></textarea>
-        </div>
-
-        <table style="margin-bottom: 15px;">
-            <thead>
-                <tr>
-                    <th></th>
-                    <th>Inventarski broj</th>
-                    <th>Naziv</th>
-                    <th>Klasa</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php foreach ($stavke as $s): ?>
-                    <?php if (!$s['vraceno']): ?>
-                    <tr>
-                        <td><input type="checkbox" name="stavke[]" value="<?= $s['id'] ?>"></td>
-                        <td><?= htmlspecialchars($s['inventarski_broj']) ?></td>
-                        <td><?= htmlspecialchars($s['naziv']) ?></td>
-                        <td><?= htmlspecialchars($s['naziv_klase']) ?></td>
-                    </tr>
-                    <?php endif; ?>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
-
-        <button type="submit" class="btn">Evidentiraj vraćanje izabranih</button>
-    </form>
-</div>
-<?php endif; ?>
-
 <div style="margin-top: 20px;">
-    <div class="detalj-sekcija" style="margin-top:0;">Sve stavke reversa</div>
+    <div class="detalj-sekcija" style="margin-top:0;">Stavke reversa</div>
     <table>
         <thead>
             <tr>
                 <th>Inventarski broj</th>
                 <th>Naziv</th>
                 <th>Klasa</th>
-                <th>Status</th>
-                <th>Datum vraćanja</th>
+                <?php if ($revers['status'] !== 'U_PRIPREMI'): ?>
+                    <th>Status</th>
+                    <th>Datum vraćanja</th>
+                <?php else: ?>
+                    <th>Akcije</th>
+                <?php endif; ?>
             </tr>
         </thead>
         <tbody>
@@ -275,19 +324,55 @@ require_once 'header.php';
                     <td><?= htmlspecialchars($s['inventarski_broj']) ?></td>
                     <td><?= htmlspecialchars($s['naziv']) ?></td>
                     <td><?= htmlspecialchars($s['naziv_klase']) ?></td>
-                    <td>
-                        <?php if ($s['vraceno']): ?>
-                            <span class="oznaka oznaka-neaktivna">Vraćeno</span>
-                        <?php else: ?>
-                            <span class="oznaka oznaka-aktivna">Zaduženo</span>
-                        <?php endif; ?>
-                    </td>
-                    <td><?= htmlspecialchars($s['datum_vracanja'] ?? '—') ?></td>
+                    <?php if ($revers['status'] !== 'U_PRIPREMI'): ?>
+                        <td>
+                            <?php if ($s['vraceno']): ?>
+                                <span class="oznaka oznaka-neaktivna">Vraćeno</span>
+                            <?php else: ?>
+                                <span class="oznaka oznaka-aktivna">Zaduženo</span>
+                            <?php endif; ?>
+                        </td>
+                        <td><?= htmlspecialchars($s['datum_vracanja'] ?? '—') ?></td>
+                    <?php else: ?>
+                        <td class="akcije">
+                            <form method="POST" style="display:inline;" onsubmit="return confirm('Ukloniti ovu stavku sa nacrta reversa?');">
+                                <input type="hidden" name="akcija" value="ukloni_stavku">
+                                <input type="hidden" name="stavka_id" value="<?= $s['id'] ?>">
+                                <button type="submit" class="btn" style="background:#dc3545; padding:2px 10px; font-size:12px;">Ukloni</button>
+                            </form>
+                        </td>
+                    <?php endif; ?>
                 </tr>
             <?php endforeach; ?>
         </tbody>
     </table>
 </div>
+
+<?php if ($revers['status'] === 'U_PRIPREMI'): ?>
+<div class="form-container forma-siroka" style="margin-top: 20px;">
+    <h3 style="margin-top:0;">Dodaj stavke na nacrt</h3>
+    <?php if (empty($dostupnaSredstva)): ?>
+        <p class="napomena-polje">Nema dodatnih dostupnih sredstava za dodavanje.</p>
+    <?php else: ?>
+        <form method="POST" action="">
+            <input type="hidden" name="akcija" value="dodaj_stavke">
+            <div class="lista-checkboxova">
+                <?php foreach ($dostupnaSredstva as $sr): ?>
+                    <label class="stavka-checkboxa">
+                        <input type="checkbox" name="sredstva[]" value="<?= $sr['id'] ?>">
+                        <?= htmlspecialchars($sr['inventarski_broj'] . ' - ' . $sr['naziv']) ?>
+                        <span class="napomena-polje">(<?= htmlspecialchars($sr['naziv_klase']) ?>)</span>
+                        <?php if ($sr['trenutno_zaduzen']): ?>
+                            <span class="napomena-polje">— trenutno zaduženo: <?= htmlspecialchars($sr['trenutno_zaduzen']) ?> (automatski razduženo pri izdavanju)</span>
+                        <?php endif; ?>
+                    </label>
+                <?php endforeach; ?>
+            </div>
+            <button type="submit" class="btn" style="margin-top: 10px;">Dodaj izabrana sredstva</button>
+        </form>
+    <?php endif; ?>
+</div>
+<?php endif; ?>
 
 <div style="margin-top: 20px;">
     <a href="reversi_index.php" class="btn-cancel">Nazad na listu reversa</a>
