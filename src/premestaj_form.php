@@ -3,17 +3,18 @@
  * premestaj_form.php
  * -------------------
  * Evidentiranje premeštaja jednog ili više osnovnih sredstava - promena
- * lokacije i/ili mesta troška. NAMERNO ne dira zaduženje (zaposleni_id) -
- * to je odvojen proces koji ide isključivo kroz revers (izdavanje/vraćanje),
- * da se ne bi mešala dva puta koja menjaju istu kolonu.
+ * lokacije i/ili mesta troška. Kreira zaglavlje dokumenta (broj, datum) u
+ * dokumenti_premestaja, a svako izabrano sredstvo dobija svoj red u
+ * premestaji_sredstva povezan na to zaglavlje - isti obrazac kao revers.
  *
- * Podržava grupni premeštaj (više sredstava u jednom dokumentu/transakciji),
- * isti obrazac kao revers_form.php za više stavki na jednom reversu.
+ * NAMERNO ne dira zaduženje (zaposleni_id) - to ide isključivo kroz revers
+ * (izdavanje/vraćanje), da se ne bi mešala dva puta koja menjaju istu kolonu.
  */
 
 require_once 'auth.php';
 zahtevajPrijavu();
 require_once 'db.php';
+require_once 'helpers.php';
 
 $poruka = '';
 
@@ -44,8 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $poruka = "Izaberite novu lokaciju i/ili novo mesto troška (ostavite polje na 'Ne menjaj' ako se to ne menja).";
     } else {
         // '' znači "ne menjaj ovo polje" - primenjuje se trenutna vrednost
-        // svakog sredstva ponaosob (vidi petlju ispod). Ovo omogućava da se
-        // u jednom premeštaju promeni SAMO lokacija ili SAMO mesto troška.
+        // svakog sredstva ponaosob (vidi petlju ispod).
         $novaLokacija = $podaci['nova_lokacija_id'] !== '' ? (int)$podaci['nova_lokacija_id'] : null;
         $novoMestoTroska = $podaci['novo_mesto_troska_id'] !== '' ? (int)$podaci['novo_mesto_troska_id'] : null;
         $nemenjajLokaciju = $podaci['nova_lokacija_id'] === '';
@@ -61,7 +61,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new \RuntimeException('Vrsta transakcije PREMESTAJ ne postoji u bazi.');
             }
 
+            $brojDokumenta = sledeciBrojPremestaja($pdo);
             $trenutni = trenutniKorisnik();
+
+            $stmt = $pdo->prepare(
+                "INSERT INTO dokumenti_premestaja
+                    (broj_dokumenta, datum_premestaja, nova_lokacija_id, novo_mesto_troska_id, korisnik_id, napomena)
+                 VALUES
+                    (:broj, :datum, :lokacija, :mesto_troska, :korisnik, :napomena)"
+            );
+            $stmt->execute([
+                ':broj'         => $brojDokumenta,
+                ':datum'        => $podaci['datum_premestaja'],
+                ':lokacija'     => $novaLokacija,
+                ':mesto_troska' => $novoMestoTroska,
+                ':korisnik'     => $trenutni['id'] ?? null,
+                ':napomena'     => $podaci['napomena'] !== '' ? $podaci['napomena'] : null,
+            ]);
+            $dokumentId = (int)$pdo->lastInsertId();
 
             $stmtStanje = $pdo->prepare(
                 "SELECT lokacija_id, mesto_troska_id, odgovorno_lice, zaposleni_id
@@ -69,19 +86,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             );
             $stmtTransakcija = $pdo->prepare(
                 "INSERT INTO transakcije_sredstva
-                    (sredstvo_id, vrsta_transakcije_id, datum_transakcije, opis, korisnik_id, napomena)
+                    (sredstvo_id, vrsta_transakcije_id, datum_transakcije, broj_dokumenta, opis, korisnik_id, napomena)
                  VALUES
-                    (:sredstvo, :vrsta, :datum, :opis, :korisnik, :napomena)"
+                    (:sredstvo, :vrsta, :datum, :broj_dok, :opis, :korisnik, :napomena)"
             );
             $stmtPremestaj = $pdo->prepare(
                 "INSERT INTO premestaji_sredstva
-                    (transakcija_id, sredstvo_id, datum_premestaja,
+                    (dokument_premestaja_id, transakcija_id, sredstvo_id, datum_premestaja,
                      stara_lokacija_id, nova_lokacija_id,
                      staro_mesto_troska_id, novo_mesto_troska_id,
                      staro_odgovorno_lice, stari_zaposleni_id,
                      novo_odgovorno_lice, novi_zaposleni_id, napomena)
                  VALUES
-                    (:transakcija, :sredstvo, :datum,
+                    (:dokument, :transakcija, :sredstvo, :datum,
                      :stara_lok, :nova_lok,
                      :staro_mt, :novo_mt,
                      :staro_lice, :stari_zap,
@@ -96,7 +113,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             );
 
             $brojPremestenih = 0;
-            $brojPreskocenih = 0;
 
             foreach ($podaci['sredstva'] as $sredstvoId) {
                 $stmtStanje->execute([':id' => $sredstvoId]);
@@ -114,7 +130,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Ako se za OVO sredstvo ništa stvarno ne menja, preskoči ga -
                 // nema smisla evidentirati "premeštaj" bez promene.
                 if ($primeniLokaciju === $staraLokacija && $primeniMestoTroska === $staroMestoTroska) {
-                    $brojPreskocenih++;
                     continue;
                 }
 
@@ -122,13 +137,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ':sredstvo' => $sredstvoId,
                     ':vrsta'    => $vrstaTransakcije['id'],
                     ':datum'    => $podaci['datum_premestaja'],
-                    ':opis'     => 'Premeštaj osnovnog sredstva',
+                    ':broj_dok' => $brojDokumenta,
+                    ':opis'     => 'Premeštaj po dokumentu ' . $brojDokumenta,
                     ':korisnik' => $trenutni['id'] ?? null,
                     ':napomena' => $podaci['napomena'] !== '' ? $podaci['napomena'] : null,
                 ]);
                 $transakcijaId = (int)$pdo->lastInsertId();
 
                 $stmtPremestaj->execute([
+                    ':dokument'    => $dokumentId,
                     ':transakcija' => $transakcijaId,
                     ':sredstvo'    => $sredstvoId,
                     ':datum'       => $podaci['datum_premestaja'],
@@ -157,12 +174,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $poruka = "Nijedno izabrano sredstvo nije premešteno - sva su već na izabranoj lokaciji/mestu troška.";
             } else {
                 $pdo->commit();
-                header("Location: premestaji_index.php");
+                header("Location: premestaji_pregled.php?id=" . $dokumentId);
                 exit;
             }
         } catch (\PDOException $e) {
             $pdo->rollBack();
-            $poruka = "Greška pri upisu u bazu: " . $e->getMessage();
+            if ($e->getCode() === '23000') {
+                $poruka = "Došlo je do konflikta pri generisanju broja dokumenta (verovatno je neko drugi baš u ovom trenutku napravio premeštaj). Pokušajte ponovo.";
+            } else {
+                $poruka = "Greška pri upisu u bazu: " . $e->getMessage();
+            }
         } catch (\RuntimeException $e) {
             $pdo->rollBack();
             $poruka = $e->getMessage();
@@ -194,7 +215,7 @@ require_once 'header.php';
 <div class="form-container forma-siroka">
     <h2>Premeštaj osnovnih sredstava</h2>
     <p class="napomena-polje" style="margin-top:-10px; margin-bottom: 20px;">
-        Promena lokacije i/ili mesta troška za jedno ili više sredstava odjednom.
+        Promena lokacije i/ili mesta troška za jedno ili više sredstava odjednom - dobija broj dokumenta koji se može odštampati.
         Za promenu zaduženog lica koristite <a href="revers_form.php">Revers</a>.
     </p>
 
