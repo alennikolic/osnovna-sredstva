@@ -19,6 +19,8 @@ $stavkeMenija = [
     ['naziv' => 'Osnovna sredstva', 'link' => 'index.php', 'sekcija' => ['index.php', 'os_form.php', 'os_pregled.php']],
     ['naziv' => 'Klase osnovnih sredstava', 'link' => 'klase_index.php', 'sekcija' => ['klase_index.php', 'klase_form.php']],
     ['naziv' => 'Zaposleni', 'link' => 'zaposleni_index.php', 'sekcija' => ['zaposleni_index.php', 'zaposleni_form.php']],
+    ['naziv' => 'Lokacije', 'link' => 'lokacije_index.php', 'sekcija' => ['lokacije_index.php', 'lokacije_form.php']],
+    ['naziv' => 'Mesta troška', 'link' => 'mesta_troska_index.php', 'sekcija' => ['mesta_troska_index.php', 'mesta_troska_form.php']],
 ];
 ?>
 <!DOCTYPE html>
