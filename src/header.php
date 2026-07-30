@@ -25,8 +25,8 @@ $korisnik = trenutniKorisnik();
 // forma za unos osnovnih sredstava treba da drže istu stavku menija aktivnom.
 //
 // "Šifarnici" objedinjuje sve matične/šifrirane podatke (klase, lokacije,
-// mesta troška, dobavljači...) pod jednu stavku menija - isti princip kao
-// "Evidencija kretanja".
+// mesta troška, dobavljači, amortizacione grupe, metode amortizacije...) pod
+// jednu stavku menija.
 $stavkeMenija = [
     ['naziv' => 'Osnovna sredstva', 'link' => 'index.php', 'sekcija' => ['index.php', 'os_form.php', 'os_pregled.php']],
     ['naziv' => 'Šifarnici', 'link' => 'sifarnici_index.php', 'sekcija' => [
@@ -35,6 +35,8 @@ $stavkeMenija = [
         'lokacije_index.php', 'lokacije_form.php',
         'mesta_troska_index.php', 'mesta_troska_form.php',
         'dobavljaci_index.php', 'dobavljaci_form.php',
+        'amortizacione_grupe_index.php', 'amortizacione_grupe_form.php',
+        'metode_amortizacije_index.php', 'metode_amortizacije_form.php',
     ]],
     ['naziv' => 'Zaposleni', 'link' => 'zaposleni_index.php', 'sekcija' => ['zaposleni_index.php', 'zaposleni_form.php']],
     ['naziv' => 'Popis', 'link' => 'popisi_index.php', 'sekcija' => ['popisi_index.php', 'popisi_form.php', 'popis_pregled.php', 'popis_stavka_form.php']],
