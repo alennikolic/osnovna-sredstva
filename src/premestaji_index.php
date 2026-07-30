@@ -2,8 +2,8 @@
 /**
  * premestaji_index.php
  * ---------------------
- * Lista svih dokumenata premeštaja (zaglavlja), sa brojem stavki po
- * dokumentu - isti obrazac kao reversi_index.php.
+ * Lista svih dokumenata premeštaja (zaglavlja), sa statusom i brojem stavki
+ * po dokumentu - isti obrazac kao reversi_index.php.
  */
 
 require_once 'auth.php';
@@ -14,13 +14,19 @@ $stmt = $pdo->query(
     "SELECT
         d.*,
         nl.naziv AS nova_lokacija, nmt.naziv AS novo_mesto_troska,
-        (SELECT COUNT(*) FROM premestaji_sredstva p WHERE p.dokument_premestaja_id = d.id) AS broj_stavki
+        (SELECT COUNT(*) FROM stavke_premestaja sp WHERE sp.dokument_premestaja_id = d.id) AS broj_stavki
      FROM dokumenti_premestaja d
      LEFT JOIN lokacije nl ON nl.id = d.nova_lokacija_id
      LEFT JOIN mesta_troska nmt ON nmt.id = d.novo_mesto_troska_id
      ORDER BY d.datum_premestaja DESC, d.id DESC"
 );
 $dokumenti = $stmt->fetchAll();
+
+$mapaStatusa = [
+    'U_PRIPREMI' => ['U pripremi', 'oznaka-u-toku'],
+    'IZDAT'      => ['Izdat', 'oznaka-aktivna'],
+    'PONISTEN'   => ['Poništen', 'oznaka-otkazana'],
+];
 
 $naslovStranice = 'Istorija premeštaja';
 require_once 'header.php';
@@ -38,20 +44,23 @@ require_once 'header.php';
                 <th>Nova lokacija</th>
                 <th>Novo mesto troška</th>
                 <th>Broj stavki</th>
+                <th>Status</th>
                 <th>Akcije</th>
             </tr>
         </thead>
         <tbody>
             <?php if (empty($dokumenti)): ?>
-                <tr><td colspan="6" style="text-align:center;">Nema evidentiranih premeštaja.</td></tr>
+                <tr><td colspan="7" style="text-align:center;">Nema evidentiranih premeštaja.</td></tr>
             <?php else: ?>
                 <?php foreach ($dokumenti as $d): ?>
+                    <?php [$nazivStatusa, $klasaOznake] = $mapaStatusa[$d['status']] ?? [$d['status'], 'oznaka-neaktivna']; ?>
                     <tr>
                         <td><strong><?= htmlspecialchars($d['broj_dokumenta']) ?></strong></td>
                         <td><?= htmlspecialchars($d['datum_premestaja']) ?></td>
                         <td><?= htmlspecialchars($d['nova_lokacija'] ?? '—') ?></td>
                         <td><?= htmlspecialchars($d['novo_mesto_troska'] ?? '—') ?></td>
                         <td><?= (int)$d['broj_stavki'] ?></td>
+                        <td><span class="oznaka <?= $klasaOznake ?>"><?= $nazivStatusa ?></span></td>
                         <td class="akcije">
                             <a href="premestaji_pregled.php?id=<?= $d['id'] ?>">Pregled</a>
                         </td>
