@@ -136,6 +136,8 @@ CREATE TABLE `klase_osnovnih_sredstava` (
   `konto_nabavne_vrednosti` VARCHAR(20) NULL COMMENT 'Konto GK - nabavna (bruto) vrednost',
   `konto_ispravke_vrednosti` VARCHAR(20) NULL COMMENT 'Konto GK - ispravka vrednosti (akumulirana amortizacija)',
   `konto_troska_amortizacije` VARCHAR(20) NULL COMMENT 'Konto GK - trošak amortizacije',
+  `ukljucuje_se_u_popis` TINYINT(1) NOT NULL DEFAULT 1
+      COMMENT 'Da li se sredstva ove klase uključuju u fizički popis (npr. nematerijalna ulaganja se često isključuju - verifikuju se kroz dokumentaciju, ne fizičkim obilaskom)',
   `aktivna` TINYINT(1) NOT NULL DEFAULT 1,
   `datum_kreiranja` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `datum_izmene` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -894,6 +896,12 @@ VALUES
       (SELECT id FROM (SELECT id FROM `klase_osnovnih_sredstava` WHERE `sifra`='OPR') AS t),'MATERIJALNO'),
   ('OPR-NAM','Nameštaj i kancelarijska oprema','Kancelarijski nameštaj i oprema',
       (SELECT id FROM (SELECT id FROM `klase_osnovnih_sredstava` WHERE `sifra`='OPR') AS t),'MATERIJALNO');
+
+-- Primer korišćenja ukljucuje_se_u_popis: nematerijalna ulaganja (licence, patenti)
+-- se tipično NE popisuju fizičkim obilaskom, već proverom dokumentacije/ugovora -
+-- zato su ovde po podrazumevanoj (primer) politici isključena iz popisa. Ostale
+-- klase ostaju na podrazumevanom uključeno (1) - promeni po potrebi kroz UI.
+UPDATE `klase_osnovnih_sredstava` SET `ukljucuje_se_u_popis` = 0 WHERE `sifra` = 'NEMAT';
 
 -- --- Primer definicija dodatnih atributa po klasi (EAV) ------------------------
 INSERT INTO `definicije_atributa`
