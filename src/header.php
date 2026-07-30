@@ -23,10 +23,6 @@ $korisnik = trenutniKorisnik();
 
 // 'sekcija' je lista fajlova koji pripadaju istoj celini - npr. i pregled i
 // forma za unos osnovnih sredstava treba da drže istu stavku menija aktivnom.
-//
-// "Šifarnici" objedinjuje sve matične/šifrirane podatke (klase, lokacije,
-// mesta troška, dobavljači, amortizacione grupe, metode amortizacije...) pod
-// jednu stavku menija.
 $stavkeMenija = [
     ['naziv' => 'Osnovna sredstva', 'link' => 'index.php', 'sekcija' => ['index.php', 'os_form.php', 'os_pregled.php']],
     ['naziv' => 'Šifarnici', 'link' => 'sifarnici_index.php', 'sekcija' => [
@@ -45,6 +41,7 @@ $stavkeMenija = [
         'premestaji_index.php', 'premestaj_form.php', 'premestaji_pregled.php', 'premestaj_stampa.php',
         'reversi_index.php', 'revers_form.php', 'revers_pregled.php', 'revers_stampa.php',
     ]],
+    ['naziv' => 'Amortizacija', 'link' => 'obracuni_index.php', 'sekcija' => ['obracuni_index.php', 'obracun_form.php', 'obracun_pregled.php']],
 ];
 ?>
 <!DOCTYPE html>
