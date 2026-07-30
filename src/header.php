@@ -8,10 +8,18 @@
  *
  * VAŽNO: dodavanje novog modula (npr. zaposleni) znači samo dodavanje
  * jedne stavke u $stavkeMenija ispod - meni se automatski ažurira svuda.
+ *
+ * Pretpostavlja da je stranica koja ga uključuje VEĆ pozvala zahtevajPrijavu()
+ * (iz auth.php), pa je $_SESSION['korisnik'] uvek popunjeno u ovom trenutku -
+ * ali auth.php se ipak ponovo uključuje ovde (require_once je idempotentan)
+ * kao dodatna zaštita ako neka stranica to zaboravi.
  */
+
+require_once 'auth.php';
 
 $naslovStranice = $naslovStranice ?? 'Osnovna sredstva';
 $trenutnaStranica = basename($_SERVER['SCRIPT_NAME']);
+$korisnik = trenutniKorisnik();
 
 // 'sekcija' je lista fajlova koji pripadaju istoj celini - npr. i pregled i
 // forma za unos osnovnih sredstava treba da drže istu stavku menija aktivnom.
@@ -34,10 +42,18 @@ $stavkeMenija = [
 <body>
 
     <div class="nav-bar">
-        <?php foreach ($stavkeMenija as $stavka): ?>
-            <a href="<?= htmlspecialchars($stavka['link']) ?>"
-               class="<?= in_array($trenutnaStranica, $stavka['sekcija'], true) ? 'aktivan' : '' ?>">
-                <?= htmlspecialchars($stavka['naziv']) ?>
-            </a>
-        <?php endforeach; ?>
+        <div class="nav-linkovi">
+            <?php foreach ($stavkeMenija as $stavka): ?>
+                <a href="<?= htmlspecialchars($stavka['link']) ?>"
+                   class="<?= in_array($trenutnaStranica, $stavka['sekcija'], true) ? 'aktivan' : '' ?>">
+                    <?= htmlspecialchars($stavka['naziv']) ?>
+                </a>
+            <?php endforeach; ?>
+        </div>
+        <?php if ($korisnik): ?>
+        <div class="nav-korisnik">
+            <span><?= htmlspecialchars($korisnik['ime_prezime']) ?> <span class="napomena-polje">(<?= htmlspecialchars($korisnik['rola_naziv']) ?>)</span></span>
+            <a href="logout.php">Odjava</a>
+        </div>
+        <?php endif; ?>
     </div>
