@@ -37,6 +37,29 @@ if (!$sredstvo) {
 // u suprotnom slobodan tekst iz odgovorno_lice.
 $zaduzenoLice = $sredstvo['naziv_zaposlenog'] ?? $sredstvo['odgovorno_lice'] ?? null;
 
+// Istorija premeštaja OVOG sredstva - prikaz starog i novog stanja po svakom
+// premeštaju, najnoviji prvi (isti upit kao u premestaji_index.php, filtriran
+// po sredstvu).
+$stmt = $pdo->prepare(
+    "SELECT
+        p.id, p.datum_premestaja, p.napomena,
+        sl.naziv AS stara_lokacija, nl.naziv AS nova_lokacija,
+        smt.naziv AS staro_mesto_troska, nmt.naziv AS novo_mesto_troska,
+        CASE WHEN sz.id IS NOT NULL THEN CONCAT(sz.ime, ' ', sz.prezime) ELSE p.staro_odgovorno_lice END AS staro_zaduzeno_lice,
+        CASE WHEN nz.id IS NOT NULL THEN CONCAT(nz.ime, ' ', nz.prezime) ELSE p.novo_odgovorno_lice END AS novo_zaduzeno_lice
+     FROM premestaji_sredstva p
+     LEFT JOIN lokacije sl ON sl.id = p.stara_lokacija_id
+     LEFT JOIN lokacije nl ON nl.id = p.nova_lokacija_id
+     LEFT JOIN mesta_troska smt ON smt.id = p.staro_mesto_troska_id
+     LEFT JOIN mesta_troska nmt ON nmt.id = p.novo_mesto_troska_id
+     LEFT JOIN zaposleni sz ON sz.id = p.stari_zaposleni_id
+     LEFT JOIN zaposleni nz ON nz.id = p.novi_zaposleni_id
+     WHERE p.sredstvo_id = :id
+     ORDER BY p.datum_premestaja DESC, p.id DESC"
+);
+$stmt->execute([':id' => $id]);
+$istorijaPremestaja = $stmt->fetchAll();
+
 $naslovStranice = 'Pregled: ' . $sredstvo['naziv'];
 require_once 'header.php';
 ?>
@@ -144,8 +167,39 @@ require_once 'header.php';
 
     <div style="margin-top: 25px;">
         <a href="os_form.php?id=<?= $sredstvo['id'] ?>" class="btn">Izmeni</a>
+        <a href="premestaj_form.php?sredstvo_id=<?= $sredstvo['id'] ?>" class="btn">Premesti</a>
         <a href="index.php" class="btn-cancel">Nazad na pregled</a>
     </div>
+</div>
+
+<div style="margin-top: 20px;">
+    <div class="detalj-sekcija" style="margin-top:0;">Istorija premeštaja</div>
+    <table>
+        <thead>
+            <tr>
+                <th>Datum</th>
+                <th>Lokacija (staro → novo)</th>
+                <th>Mesto troška (staro → novo)</th>
+                <th>Zaduženo lice (staro → novo)</th>
+                <th>Napomena</th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php if (empty($istorijaPremestaja)): ?>
+                <tr><td colspan="5" style="text-align:center;">Nema evidentiranih premeštaja za ovo sredstvo.</td></tr>
+            <?php else: ?>
+                <?php foreach ($istorijaPremestaja as $p): ?>
+                    <tr>
+                        <td><?= htmlspecialchars($p['datum_premestaja']) ?></td>
+                        <td><?= htmlspecialchars($p['stara_lokacija'] ?? '—') ?> → <?= htmlspecialchars($p['nova_lokacija'] ?? '—') ?></td>
+                        <td><?= htmlspecialchars($p['staro_mesto_troska'] ?? '—') ?> → <?= htmlspecialchars($p['novo_mesto_troska'] ?? '—') ?></td>
+                        <td><?= htmlspecialchars($p['staro_zaduzeno_lice'] ?? '—') ?> → <?= htmlspecialchars($p['novo_zaduzeno_lice'] ?? '—') ?></td>
+                        <td><?= htmlspecialchars($p['napomena'] ?? '') ?></td>
+                    </tr>
+                <?php endforeach; ?>
+            <?php endif; ?>
+        </tbody>
+    </table>
 </div>
 
 <?php require_once 'footer.php'; ?>
