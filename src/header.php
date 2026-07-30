@@ -30,6 +30,7 @@ $stavkeMenija = [
     ['naziv' => 'Lokacije', 'link' => 'lokacije_index.php', 'sekcija' => ['lokacije_index.php', 'lokacije_form.php']],
     ['naziv' => 'Mesta troška', 'link' => 'mesta_troska_index.php', 'sekcija' => ['mesta_troska_index.php', 'mesta_troska_form.php']],
     ['naziv' => 'Popis', 'link' => 'popisi_index.php', 'sekcija' => ['popisi_index.php', 'popisi_form.php', 'popis_pregled.php', 'popis_stavka_form.php']],
+    ['naziv' => 'Reversi', 'link' => 'reversi_index.php', 'sekcija' => ['reversi_index.php', 'revers_form.php', 'revers_pregled.php']],
 ];
 ?>
 <!DOCTYPE html>
