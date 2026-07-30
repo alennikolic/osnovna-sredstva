@@ -5,7 +5,7 @@
  * Čvorna (hub) stranica menija "Evidencija kretanja" - objedinjuje na jednom
  * mestu sve akcije vezane za kretanje osnovnih sredstava: premeštaj (promena
  * lokacije/mesta troška/zaduženog lica), zaduženje i razduženje putem
- * reversa, i (u budućnosti) objedinjenu istoriju svih transakcija.
+ * reversa, i objedinjenu istoriju svih transakcija.
  *
  * Postojeći header.php nema padajuće podmenije, pa je ovo najjednostavniji
  * način da se više modula grupiše pod jednu stavku glavnog menija bez
@@ -47,12 +47,10 @@ require_once 'header.php';
         <a href="reversi_index.php" class="btn">Otvori reverse</a>
     </div>
 
-    <div class="form-container" style="flex:1; min-width:260px; margin:0; opacity:0.6;">
+    <div class="form-container" style="flex:1; min-width:260px; margin:0;">
         <h3 style="margin-top:0;">Istorija kretanja</h3>
-        <p class="napomena-polje">
-            Objedinjen hronološki pregled svih transakcija (premeštaji, zaduženja, razduženja...).
-            <strong>Uskoro</strong>.
-        </p>
+        <p class="napomena-polje">Objedinjen hronološki pregled svih zaduženja, premeštaja i razduženja, sa filterima.</p>
+        <a href="kretanje_istorija.php" class="btn">Otvori istoriju</a>
     </div>
 
 </div>
