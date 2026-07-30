@@ -25,9 +25,8 @@ $korisnik = trenutniKorisnik();
 // forma za unos osnovnih sredstava treba da drže istu stavku menija aktivnom.
 //
 // "Evidencija kretanja" objedinjuje sve akcije vezane za kretanje sredstava:
-// premeštaj (lokacija/mesto troška), zaduženje i razduženje putem reversa, i
-// objedinjenu istoriju kretanja. Sve te stranice vode na kretanje_index.php
-// kao čvornu (hub) stranicu.
+// premeštaj (lokacija/mesto troška), zaduženje putem reversa, pregled
+// trenutnih zaduženja, i objedinjenu istoriju kretanja.
 $stavkeMenija = [
     ['naziv' => 'Osnovna sredstva', 'link' => 'index.php', 'sekcija' => ['index.php', 'os_form.php', 'os_pregled.php']],
     ['naziv' => 'Klase osnovnih sredstava', 'link' => 'klase_index.php', 'sekcija' => ['klase_index.php', 'klase_form.php']],
@@ -36,7 +35,7 @@ $stavkeMenija = [
     ['naziv' => 'Mesta troška', 'link' => 'mesta_troska_index.php', 'sekcija' => ['mesta_troska_index.php', 'mesta_troska_form.php']],
     ['naziv' => 'Popis', 'link' => 'popisi_index.php', 'sekcija' => ['popisi_index.php', 'popisi_form.php', 'popis_pregled.php', 'popis_stavka_form.php']],
     ['naziv' => 'Evidencija kretanja', 'link' => 'kretanje_index.php', 'sekcija' => [
-        'kretanje_index.php', 'kretanje_istorija.php',
+        'kretanje_index.php', 'kretanje_istorija.php', 'zaduzenja_pregled.php',
         'premestaji_index.php', 'premestaj_form.php', 'premestaji_pregled.php', 'premestaj_stampa.php',
         'reversi_index.php', 'revers_form.php', 'revers_pregled.php', 'revers_stampa.php',
     ]],
